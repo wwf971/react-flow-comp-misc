@@ -1,0 +1,61 @@
+.custom-node {
+  padding: 8px;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background: #fff;
+  min-width: 150px;
+}
+
+.custom-node-header {
+  font-weight: bold;
+  margin-bottom: 4px;
+  padding: 4px;
+  background: #f0f0f0;
+  border-radius: 2px;
+}
+
+.custom-node-body {
+  font-size: 12px;
+  padding: 4px;
+  color: #666;
+}
+
+.custom-node-editable {
+  min-height: 16px;
+  cursor: text;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.custom-node-editable:focus {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 2px;
+}
+
+.multi-handle-node {
+  padding: 12px;
+  border: 2px solid #1a192b;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  min-width: 120px;
+  text-align: center;
+}
+
+.node-content {
+  font-weight: bold;
+}
+
+.multi-handle-editable {
+  min-height: 19px;
+  cursor: text;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.multi-handle-editable:focus {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
