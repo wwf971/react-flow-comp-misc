@@ -9,7 +9,7 @@ import {
   useNodesState,
   useEdgesState,
   useOnConnect,
-} from '../store/graphStoreJotai';
+} from './storeMobx';
 import 'reactflow/dist/style.css';
 
 const initialNodes = [
@@ -23,9 +23,9 @@ const initialEdges = [
   { id: 'e2-3', source: '2', target: '3', type: 'smoothstep', animated: true },
 ];
 
-function JotaiFlowContent() {
-  const [nodes, setNodes, onNodesChange, nodeVersion] = useNodesState();
-  const [edges, setEdges, onEdgesChange] = useEdgesState();
+function MobxFlowContent() {
+  const [nodes, , onNodesChange, nodeVersion] = useNodesState();
+  const [edges, , onEdgesChange] = useEdgesState();
   const onConnect = useOnConnect();
 
   return (
@@ -47,10 +47,10 @@ function JotaiFlowContent() {
   );
 }
 
-export default function JotaiFlow() {
+export default function MobxFlow() {
   return (
     <GraphStoreProvider initialNodes={initialNodes} initialEdges={initialEdges}>
-      <JotaiFlowContent />
+      <MobxFlowContent />
     </GraphStoreProvider>
   );
 }

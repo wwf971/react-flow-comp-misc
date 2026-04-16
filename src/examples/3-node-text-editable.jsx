@@ -3,12 +3,12 @@
 
   --> onNodesChange([{ type: 'position', id, position, ... }]).
     called by React Flow when dragging a node.
-  --> applyNodeChanges() @jotai store
+  --> applyNodeChanges() @mobx store
     looks up nodeSettersMap.get(id) and calls setter(n => ({ ...n, position, ... }))
     setNodeVersion(v+1) bumps version.
 2. And how does this position triggers re-render of the node and all connecting edges?
-  Re-render: nodesAtom depends on nodeVersionAtom + every node atom -> invalidated.
-  useAtomValue(nodesAtom) re-runs the getter -> new array ref, changed node = new object ref.
+  Re-render: MobX observes nodes + nodeVersion updates and triggers a re-render.
+  React Flow receives nodes with a new array ref and changed node object ref.
   We pass nodes={newArray} to React Flow -> nodes is a new array ref -> React re-renders the ReactFlow root (prop changed).
   Only one node object is new; array is new. React Flow may memo internally so only that node (and its edges) re-render.
   Edges: same edges ref; React Flow derives edge paths from current nodes, so edges redraw.
@@ -33,7 +33,7 @@ import {
   useNodesState,
   useEdgesState,
   useOnConnect,
-} from '../store/graphStoreJotai';
+} from './storeMobx';
 import 'reactflow/dist/style.css';
 import './3-node-text-editable.css';
 
@@ -147,7 +147,7 @@ const initialEdges = [
 
 function NodeTextEditableFlowContent() {
   const [nodes, setNodes, onNodesChange, nodeVersion] = useNodesState();
-  const [edges, setEdges, onEdgesChange] = useEdgesState();
+  const [edges, , onEdgesChange] = useEdgesState();
   const onConnect = useOnConnect();
 
   const handleDataChange = useCallback(
@@ -162,7 +162,9 @@ function NodeTextEditableFlowContent() {
   );
 
   const onChangeRef = useRef(handleDataChange);
-  onChangeRef.current = handleDataChange;
+  useEffect(() => {
+    onChangeRef.current = handleDataChange;
+  }, [handleDataChange]);
 
   return (
     <NodeDataChangeRefContext.Provider value={onChangeRef}>
