@@ -1,0 +1,61 @@
+.resize-node-root {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #8a8a8a;
+  border-radius: 2px;
+  background: #ffffff;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+}
+
+.resize-node-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.resize-node-desc {
+  font-size: 11px;
+  color: #5a5a5a;
+}
+
+.resize-node-handle {
+  border: 1px solid transparent !important;
+  border-radius: 2px;
+  background: transparent !important;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.resize-node-line {
+  border-color: transparent !important;
+  transition: border-color 120ms ease;
+}
+
+.resize-node-line:hover,
+.resize-node-line:active {
+  border-color: rgba(65, 65, 65, 0.45) !important;
+}
+
+.resize-node-handle:hover,
+.resize-node-handle:active {
+  border-color: rgba(65, 65, 65, 0.55) !important;
+  background: rgba(65, 65, 65, 0.45) !important;
+}
+
+.resize-node-line.left,
+.resize-node-line.right {
+  cursor: ew-resize;
+}
+
+.resize-node-line.top,
+.resize-node-line.bottom {
+  cursor: ns-resize;
+}
+
+.resize-node-port {
+  width: 6px;
+  height: 6px;
+}

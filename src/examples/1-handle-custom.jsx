@@ -4,12 +4,11 @@ import {
   MiniMap,
   Controls,
   Background,
-  useNodesState,
-  useEdgesState,
   addEdge,
   Handle,
   Position,
 } from 'reactflow';
+import { useNodesState, useEdgesState } from './storeExapmle';
 import 'reactflow/dist/style.css';
 
 function NodeCircle({ data }) {
@@ -139,9 +138,11 @@ const initialEdges = [
   { id: 'e-circle-2', source: 'circle-1', sourceHandle: 'circle-2', target: 'circle-target-2', type: 'defaults' },
 ];
 
+const handleCustomFlowId = 'handleCustomFlowId';
+
 export default function HandleCustomFlow() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(handleCustomFlowId, initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(handleCustomFlowId, initialEdges);
 
   const onConnect = useCallback(
     (params) =>

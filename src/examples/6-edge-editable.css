@@ -1,0 +1,55 @@
+.editable-edge-visible-path {
+  stroke: #4a4a4a;
+  stroke-width: 2px;
+  fill: none;
+  transition: stroke-width 120ms ease, stroke 120ms ease;
+}
+
+.editable-edge-visible-path.is-selected {
+  stroke: rgba(55, 55, 55, 0.95);
+  stroke-width: 3px;
+}
+
+.editable-edge-hit-path {
+  stroke: rgba(0, 0, 0, 0);
+  stroke-width: 18px;
+  fill: none;
+  cursor: context-menu;
+}
+
+.editable-edge-control-point {
+  fill: rgba(70, 70, 70, 0.5);
+  stroke: rgba(50, 50, 50, 0.8);
+  stroke-width: 1px;
+  pointer-events: none;
+  transition: stroke-width 120ms ease, stroke 120ms ease, fill 120ms ease;
+}
+
+.editable-edge-control-point.is-selected {
+  fill: rgba(55, 55, 55, 0.6);
+  stroke: rgba(35, 35, 35, 0.95);
+  stroke-width: 2px;
+}
+
+.editable-edge-control-point-hit {
+  fill: rgba(0, 0, 0, 0);
+  cursor: grab;
+  pointer-events: all;
+}
+
+.editable-edge-control-point-hit:active {
+  cursor: grabbing;
+}
+
+.edge-demo-node-root {
+  min-width: 90px;
+  border: 1px solid #8a8a8a;
+  border-radius: 2px;
+  padding: 4px 6px;
+  background: #ffffff;
+  font-size: 12px;
+}
+
+.edge-demo-node-label {
+  color: #222222;
+}

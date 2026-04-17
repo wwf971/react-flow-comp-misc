@@ -3,11 +3,9 @@ import {
   ReactFlow,
   Controls,
   Background,
-  useNodesState,
-  useEdgesState,
   addEdge,
-  MarkerType,
 } from 'reactflow';
+import { useNodesState, useEdgesState } from './storeExapmle';
 import 'reactflow/dist/style.css';
 
 const initialNodes = [
@@ -26,6 +24,8 @@ const initialEdges = [
   { id: 'e2-5', source: '2', target: '5' },
   { id: 'e3-6', source: '3', target: '6' },
 ];
+
+const layoutFlowId = 'layoutFlowId';
 
 // Simple horizontal layout
 const horizontalLayout = (nodes) => {
@@ -85,8 +85,8 @@ const treeLayout = (nodes, edges) => {
 };
 
 export default function LayoutFlow() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(layoutFlowId, initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(layoutFlowId, initialEdges);
 
   const onConnect = useCallback(
     (params) => setEdges((eds) => addEdge(params, eds)),

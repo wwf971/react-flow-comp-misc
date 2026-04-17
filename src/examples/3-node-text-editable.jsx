@@ -29,11 +29,10 @@ import {
   Position,
 } from 'reactflow';
 import {
-  GraphStoreProvider,
   useNodesState,
   useEdgesState,
   useOnConnect,
-} from './storeMobx';
+} from './storeExapmle';
 import 'reactflow/dist/style.css';
 import './3-node-text-editable.css';
 
@@ -56,6 +55,10 @@ function NodeTextEditableInner({ data, id }) {
     if (onChangeRef?.current && newValue !== data.label) {
       onChangeRef.current(id, { ...data, label: newValue });
     }
+  };
+
+  const handleEditableMouseDown = (e) => {
+    e.stopPropagation();
   };
 
   const handleDescBlur = (e) => {
@@ -85,9 +88,10 @@ function NodeTextEditableInner({ data, id }) {
       <div className="custom-node-header">
         <div
           ref={labelRef}
-          className="custom-node-editable nodrag"
+          className="custom-node-editable nodrag nopan"
           contentEditable
           suppressContentEditableWarning
+          onMouseDown={handleEditableMouseDown}
           onBlur={handleLabelBlur}
           onKeyDown={handleLabelKeyDown}
         >
@@ -97,9 +101,10 @@ function NodeTextEditableInner({ data, id }) {
       <div className="custom-node-body">
         <div
           ref={descRef}
-          className="custom-node-editable nodrag"
+          className="custom-node-editable nodrag nopan"
           contentEditable
           suppressContentEditableWarning
+          onMouseDown={handleEditableMouseDown}
           onBlur={handleDescBlur}
           onKeyDown={handleDescKeyDown}
         >
@@ -145,10 +150,15 @@ const initialEdges = [
   { id: 'e2-3', source: '2', target: '3', animated: true },
 ];
 
+const nodeTextEditableFlowId = 'nodeTextEditableFlowId';
+
 function NodeTextEditableFlowContent() {
-  const [nodes, setNodes, onNodesChange, nodeVersion] = useNodesState();
-  const [edges, , onEdgesChange] = useEdgesState();
-  const onConnect = useOnConnect();
+  const [nodes, setNodes, onNodesChange] = useNodesState(
+    nodeTextEditableFlowId,
+    initialNodes
+  );
+  const [edges, , onEdgesChange] = useEdgesState(nodeTextEditableFlowId, initialEdges);
+  const onConnect = useOnConnect(nodeTextEditableFlowId);
 
   const handleDataChange = useCallback(
     (nodeId, newData) => {
@@ -170,27 +180,22 @@ function NodeTextEditableFlowContent() {
     <NodeDataChangeRefContext.Provider value={onChangeRef}>
       <div className="flow-wrapper">
         <ReactFlow
-          key={nodeVersion}
           nodes={nodes}
           edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        nodeTypes={nodeTypes}
-        fitView
-      >
-        <Controls />
-        <Background variant="dots" gap={12} size={1} />
-      </ReactFlow>
-    </div>
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          nodeTypes={nodeTypes}
+          fitView
+        >
+          <Controls />
+          <Background variant="dots" gap={12} size={1} />
+        </ReactFlow>
+      </div>
     </NodeDataChangeRefContext.Provider>
   );
 }
 
 export default function NodeTextEditableFlow() {
-  return (
-    <GraphStoreProvider initialNodes={initialNodes} initialEdges={initialEdges}>
-      <NodeTextEditableFlowContent />
-    </GraphStoreProvider>
-  );
+  return <NodeTextEditableFlowContent />;
 }

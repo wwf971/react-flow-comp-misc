@@ -3,11 +3,10 @@ import {
   ReactFlow,
   Controls,
   Background,
-  useNodesState,
-  useEdgesState,
   addEdge,
   MarkerType,
 } from 'reactflow';
+import { useNodesState, useEdgesState } from './storeExapmle';
 import 'reactflow/dist/style.css';
 
 const initialNodes = [
@@ -26,12 +25,13 @@ const initialNodes = [
 ];
 
 const initialEdges = [];
+const interactiveFlowId = 'interactiveFlowId';
 
 let nodeId = 3;
 
 export default function InteractiveFlow() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(interactiveFlowId, initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(interactiveFlowId, initialEdges);
   const [selectedNode, setSelectedNode] = useState(null);
   const reactFlowWrapper = useRef(null);
 

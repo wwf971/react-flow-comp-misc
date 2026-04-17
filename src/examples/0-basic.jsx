@@ -4,10 +4,9 @@ import {
   MiniMap,
   Controls,
   Background,
-  useNodesState,
-  useEdgesState,
   addEdge,
 } from 'reactflow';
+import { useNodesState, useEdgesState } from './storeExapmle';
 import 'reactflow/dist/style.css';
 
 const initialNodes = [
@@ -22,9 +21,11 @@ const initialEdges = [
   { id: 'e2-3', source: '2', type: 'smoothstep', target: '3', animated: true },
 ];
 
+const basicFlowId = 'basicFlowId';
+
 export default function BasicFlow() {
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(basicFlowId, initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(basicFlowId, initialEdges);
 
   // 创建新的edge时调用的callback
   const onConnect = useCallback((params) => setEdges((eds) => addEdge(params, eds)), [setEdges]);

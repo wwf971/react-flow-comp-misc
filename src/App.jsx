@@ -4,10 +4,13 @@ import './App.css';
 import './examples/examples.css';
 import BasicFlow from './examples/0-basic';
 import HandleCustomFlow from './examples/1-handle-custom';
-import MobxFlow from './examples/0b-mobx.jsx';
+import NodeDragResizeFlow from './examples/2-node-drag-to-resize.jsx';
 import NodeTextEditableFlow from './examples/3-node-text-editable.jsx';
 import InteractiveFlow from './examples/4-interactive.jsx';
 import LayoutFlow from './examples/5-layouting.jsx';
+import EdgeBezierEditableFlow from './examples/6-edge-bezier-editable.jsx';
+import EdgeRecEditableFlow from './examples/6-edge-rec-editable.jsx';
+import { GraphStoreProvider } from './examples/storeExapmle';
 
 const exampleItems = [
   {
@@ -23,10 +26,10 @@ const exampleItems = [
     component: HandleCustomFlow,
   },
   {
-    key: 'mobx',
-    label: 'MobX',
-    description: 'React Flow state with MobX store.',
-    component: MobxFlow,
+    key: 'resize-node',
+    label: 'Node Resize',
+    description: 'Resize nodes by dragging their border handles.',
+    component: NodeDragResizeFlow,
   },
   {
     key: 'editable',
@@ -45,6 +48,18 @@ const exampleItems = [
     label: 'Layouting',
     description: 'Apply graph layout patterns.',
     component: LayoutFlow,
+  },
+  {
+    key: 'editable-edge-bezier',
+    label: 'Editable Edge Bezier',
+    description: 'Bezier edge with editable control points.',
+    component: EdgeBezierEditableFlow,
+  },
+  {
+    key: 'editable-edge-rec',
+    label: 'Editable Edge Right Angle',
+    description: 'Right-angle edge between two editable control points.',
+    component: EdgeRecEditableFlow,
   },
 ];
 
@@ -103,7 +118,9 @@ function App() {
             <div className="dev-content-desc">{selectedExample.description}</div>
           </div>
           <div className="dev-content-demo">
-            <SelectedComponent />
+            <GraphStoreProvider>
+              <SelectedComponent />
+            </GraphStoreProvider>
           </div>
         </div>
       </PanelDual>
