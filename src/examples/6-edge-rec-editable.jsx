@@ -18,11 +18,26 @@ const edgeRecEditableFlowId = 'edgeRecEditableFlowId';
 const EdgeRecMenuContext = createContext(null);
 const controlPointHitTolerance = 10;
 const maxControlPoints = 2;
-const orientationOptions = [
+const directionOptions = [
+  { value: 'right', label: 'right' },
+  { value: 'left', label: 'left' },
+  { value: 'down', label: 'down' },
+  { value: 'up', label: 'up' },
   { value: 'horizontal', label: 'horizontal' },
   { value: 'vertical', label: 'vertical' },
-  { value: null, label: 'null' },
+  { value: null, label: 'auto' },
 ];
+const directionalPreferenceStubLength = 24;
+const DIR_UP = 'up';
+const DIR_DOWN = 'down';
+const DIR_LEFT = 'left';
+const DIR_RIGHT = 'right';
+const PREF_HORIZONTAL = 'horizontal';
+const PREF_VERTICAL = 'vertical';
+const PREF_UP = DIR_UP;
+const PREF_DOWN = DIR_DOWN;
+const PREF_LEFT = DIR_LEFT;
+const PREF_RIGHT = DIR_RIGHT;
 
 function MenuOptionLabel({ label, isChecked }) {
   return (
@@ -135,44 +150,30 @@ function getNearestControlPointIndex(controlPoints, flowPoint, tolerance) {
   return nearestDistance <= tolerance ? nearestControlPointIndex : null;
 }
 
-function getRightAngleCorner(pointA, pointB, isHigherPointHorizontalFirst) {
-  if (pointA.y <= pointB.y) {
-    return isHigherPointHorizontalFirst
-      ? { x: pointB.x, y: pointA.y }
-      : { x: pointA.x, y: pointB.y };
-  }
-  return isHigherPointHorizontalFirst
-    ? { x: pointA.x, y: pointB.y }
-    : { x: pointB.x, y: pointA.y };
-}
-
-function appendRightAngleSegment(pathParts, fromPoint, toPoint, isHigherPointHorizontalFirst) {
-  const corner = getRightAngleCorner(fromPoint, toPoint, isHigherPointHorizontalFirst);
-  const isCornerSameAsFrom = corner.x === fromPoint.x && corner.y === fromPoint.y;
-  const isCornerSameAsTo = corner.x === toPoint.x && corner.y === toPoint.y;
-
-  if (!isCornerSameAsFrom && !isCornerSameAsTo) {
-    pathParts.push(`L ${corner.x} ${corner.y}`);
-  }
-  pathParts.push(`L ${toPoint.x} ${toPoint.y}`);
-}
-
-function isDirectionValue(direction) {
-  return direction === 'horizontal' || direction === 'vertical' || direction === null;
+function isDirectionPreferenceValue(direction) {
+  return (
+    direction === 'horizontal' ||
+    direction === 'vertical' ||
+    direction === 'left' ||
+    direction === 'right' ||
+    direction === 'up' ||
+    direction === 'down' ||
+    direction === null
+  );
 }
 
 function normalizeDirectionPreferences(directionPreferences, controlPointCount) {
   const normalizedControlPoints = Array.from({ length: controlPointCount }).map((_, index) => {
     const preference = directionPreferences?.controlPoints?.[index];
-    const prev = isDirectionValue(preference?.prev) ? preference.prev : null;
-    const next = isDirectionValue(preference?.next) ? preference.next : null;
+    const prev = isDirectionPreferenceValue(preference?.prev) ? preference.prev : null;
+    const next = isDirectionPreferenceValue(preference?.next) ? preference.next : null;
     return { prev, next };
   });
 
-  const startNext = isDirectionValue(directionPreferences?.start?.next)
+  const startNext = isDirectionPreferenceValue(directionPreferences?.start?.next)
     ? directionPreferences.start.next
     : null;
-  const endPrev = isDirectionValue(directionPreferences?.end?.prev)
+  const endPrev = isDirectionPreferenceValue(directionPreferences?.end?.prev)
     ? directionPreferences.end.prev
     : null;
 
@@ -183,24 +184,601 @@ function normalizeDirectionPreferences(directionPreferences, controlPointCount) 
   };
 }
 
-function resolveSegmentDirection(segmentIndex, directionPreferences) {
+function resolveSegmentPreferences(segmentIndex, directionPreferences) {
   const controlPointCount = directionPreferences.controlPoints.length;
-  const startDirection =
+  const startEmissionDirection =
     segmentIndex === 0
       ? directionPreferences.start.next
       : directionPreferences.controlPoints[segmentIndex - 1]?.next ?? null;
-  const endDirection =
+  const endEmissionDirection =
     segmentIndex === controlPointCount
       ? directionPreferences.end.prev
       : directionPreferences.controlPoints[segmentIndex]?.prev ?? null;
+  return { startEmissionDirection, endEmissionDirection };
+}
 
-  if (startDirection !== null) {
-    return startDirection;
+function getSegmentDirection(fromPoint, toPoint) {
+  if (fromPoint.x === toPoint.x) {
+    if (toPoint.y > fromPoint.y) return DIR_DOWN;
+    if (toPoint.y < fromPoint.y) return DIR_UP;
+    return null;
   }
-  if (endDirection !== null) {
-    return endDirection;
+  if (fromPoint.y === toPoint.y) {
+    if (toPoint.x > fromPoint.x) return DIR_RIGHT;
+    if (toPoint.x < fromPoint.x) return DIR_LEFT;
   }
-  return 'horizontal';
+  return null;
+}
+
+function getManhattanDistance(fromPoint, toPoint) {
+  return Math.abs(fromPoint.x - toPoint.x) + Math.abs(fromPoint.y - toPoint.y);
+}
+
+function getUniqueNumbers(values) {
+  return [...new Set(values)].sort((a, b) => a - b);
+}
+
+function normalizePreferenceForCase(preference, fromPoint, toPoint) {
+  if (preference === PREF_HORIZONTAL || preference === PREF_VERTICAL) return preference;
+  if (
+    preference === PREF_UP ||
+    preference === PREF_DOWN ||
+    preference === PREF_LEFT ||
+    preference === PREF_RIGHT
+  ) {
+    return preference;
+  }
+  const deltaX = toPoint.x - fromPoint.x;
+  const deltaY = toPoint.y - fromPoint.y;
+  return Math.abs(deltaX) >= Math.abs(deltaY) ? PREF_HORIZONTAL : PREF_VERTICAL;
+}
+
+function getRelativePositionKey(fromPoint, toPoint) {
+  const isOnRight = toPoint.x >= fromPoint.x;
+  const isOnBottom = toPoint.y >= fromPoint.y;
+  if (isOnRight && isOnBottom) return 'bottomRight';
+  if (!isOnRight && isOnBottom) return 'bottomLeft';
+  if (isOnRight && !isOnBottom) return 'topRight';
+  return 'topLeft';
+}
+
+function getDirectionPlanByCaseKey(caseKey) {
+  switch (caseKey) {
+    case 'topRight|up|up':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'topRight|up|down':
+      return [DIR_UP, DIR_RIGHT, DIR_UP];
+    case 'topRight|up|left':
+      return [DIR_UP, DIR_RIGHT];
+    case 'topRight|up|right':
+      return [DIR_UP, DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topRight|up|horizontal':
+      return [DIR_UP, DIR_RIGHT];
+    case 'topRight|up|vertical':
+      return [DIR_UP, DIR_RIGHT, DIR_UP];
+    case 'topRight|down|up':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'topRight|down|down':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'topRight|down|left':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topRight|down|right':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topRight|down|horizontal':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topRight|down|vertical':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'topRight|left|up':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'topRight|left|down':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT, DIR_UP];
+    case 'topRight|left|left':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topRight|left|right':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topRight|left|horizontal':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topRight|left|vertical':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT, DIR_UP];
+    case 'topRight|right|up':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'topRight|right|down':
+      return [DIR_RIGHT, DIR_UP];
+    case 'topRight|right|left':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topRight|right|right':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topRight|right|horizontal':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topRight|right|vertical':
+      return [DIR_RIGHT, DIR_UP];
+    case 'topRight|horizontal|up':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'topRight|horizontal|down':
+      return [DIR_RIGHT, DIR_UP];
+    case 'topRight|horizontal|left':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topRight|horizontal|right':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topRight|horizontal|horizontal':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topRight|horizontal|vertical':
+      return [DIR_RIGHT, DIR_UP];
+    case 'topRight|vertical|up':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'topRight|vertical|down':
+      return [DIR_UP, DIR_RIGHT, DIR_UP];
+    case 'topRight|vertical|left':
+      return [DIR_UP, DIR_RIGHT];
+    case 'topRight|vertical|right':
+      return [DIR_UP, DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topRight|vertical|horizontal':
+      return [DIR_UP, DIR_RIGHT];
+    case 'topRight|vertical|vertical':
+      return [DIR_UP, DIR_RIGHT, DIR_UP];
+    case 'topLeft|up|up':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'topLeft|up|down':
+      return [DIR_UP, DIR_LEFT, DIR_UP];
+    case 'topLeft|up|left':
+      return [DIR_UP, DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topLeft|up|right':
+      return [DIR_UP, DIR_LEFT];
+    case 'topLeft|up|horizontal':
+      return [DIR_UP, DIR_LEFT];
+    case 'topLeft|up|vertical':
+      return [DIR_UP, DIR_LEFT, DIR_UP];
+    case 'topLeft|down|up':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'topLeft|down|down':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'topLeft|down|left':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topLeft|down|right':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topLeft|down|horizontal':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topLeft|down|vertical':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'topLeft|left|up':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'topLeft|left|down':
+      return [DIR_LEFT, DIR_UP];
+    case 'topLeft|left|left':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topLeft|left|right':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topLeft|left|horizontal':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topLeft|left|vertical':
+      return [DIR_LEFT, DIR_UP];
+    case 'topLeft|right|up':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'topLeft|right|down':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT, DIR_UP];
+    case 'topLeft|right|left':
+      return [DIR_RIGHT, DIR_UP, DIR_RIGHT];
+    case 'topLeft|right|right':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topLeft|right|horizontal':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT];
+    case 'topLeft|right|vertical':
+      return [DIR_RIGHT, DIR_UP, DIR_LEFT, DIR_UP];
+    case 'topLeft|horizontal|up':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'topLeft|horizontal|down':
+      return [DIR_LEFT, DIR_UP];
+    case 'topLeft|horizontal|left':
+      return [DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topLeft|horizontal|right':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topLeft|horizontal|horizontal':
+      return [DIR_LEFT, DIR_UP, DIR_LEFT];
+    case 'topLeft|horizontal|vertical':
+      return [DIR_LEFT, DIR_UP];
+    case 'topLeft|vertical|up':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'topLeft|vertical|down':
+      return [DIR_UP, DIR_LEFT, DIR_UP];
+    case 'topLeft|vertical|left':
+      return [DIR_UP, DIR_LEFT, DIR_UP, DIR_RIGHT];
+    case 'topLeft|vertical|right':
+      return [DIR_UP, DIR_LEFT];
+    case 'topLeft|vertical|horizontal':
+      return [DIR_UP, DIR_LEFT];
+    case 'topLeft|vertical|vertical':
+      return [DIR_UP, DIR_LEFT, DIR_UP];
+    case 'bottomRight|up|up':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|up|down':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'bottomRight|up|left':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|up|right':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomRight|up|horizontal':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|up|vertical':
+      return [DIR_UP, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|down|up':
+      return [DIR_DOWN, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|down|down':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'bottomRight|down|left':
+      return [DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|down|right':
+      return [DIR_DOWN, DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomRight|down|horizontal':
+      return [DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|down|vertical':
+      return [DIR_DOWN, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|left|up':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|left|down':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'bottomRight|left|left':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|left|right':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomRight|left|horizontal':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|left|vertical':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|right|up':
+      return [DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|right|down':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'bottomRight|right|left':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|right|right':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomRight|right|horizontal':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|right|vertical':
+      return [DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|horizontal|up':
+      return [DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|horizontal|down':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'bottomRight|horizontal|left':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|horizontal|right':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomRight|horizontal|horizontal':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|horizontal|vertical':
+      return [DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|vertical|up':
+      return [DIR_DOWN, DIR_RIGHT, DIR_DOWN];
+    case 'bottomRight|vertical|down':
+      return [DIR_DOWN, DIR_RIGHT, DIR_UP];
+    case 'bottomRight|vertical|left':
+      return [DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|vertical|right':
+      return [DIR_DOWN, DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomRight|vertical|horizontal':
+      return [DIR_DOWN, DIR_RIGHT];
+    case 'bottomRight|vertical|vertical':
+      return [DIR_DOWN, DIR_RIGHT, DIR_DOWN];
+    case 'bottomLeft|up|up':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|up|down':
+      return [DIR_UP, DIR_LEFT, DIR_UP];
+    case 'bottomLeft|up|left':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomLeft|up|right':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|up|horizontal':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|up|vertical':
+      return [DIR_UP, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|down|up':
+      return [DIR_DOWN, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|down|down':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'bottomLeft|down|left':
+      return [DIR_DOWN, DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomLeft|down|right':
+      return [DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|down|horizontal':
+      return [DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|down|vertical':
+      return [DIR_DOWN, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|left|up':
+      return [DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|left|down':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'bottomLeft|left|left':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomLeft|left|right':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|left|horizontal':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|left|vertical':
+      return [DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|right|up':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|right|down':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'bottomLeft|right|left':
+      return [DIR_RIGHT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomLeft|right|right':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|right|horizontal':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|right|vertical':
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|horizontal|up':
+      return [DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|horizontal|down':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'bottomLeft|horizontal|left':
+      return [DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomLeft|horizontal|right':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|horizontal|horizontal':
+      return [DIR_LEFT, DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|horizontal|vertical':
+      return [DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|vertical|up':
+      return [DIR_DOWN, DIR_LEFT, DIR_DOWN];
+    case 'bottomLeft|vertical|down':
+      return [DIR_DOWN, DIR_LEFT, DIR_UP];
+    case 'bottomLeft|vertical|left':
+      return [DIR_DOWN, DIR_LEFT, DIR_DOWN, DIR_RIGHT];
+    case 'bottomLeft|vertical|right':
+      return [DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|vertical|horizontal':
+      return [DIR_DOWN, DIR_LEFT];
+    case 'bottomLeft|vertical|vertical':
+      return [DIR_DOWN, DIR_LEFT, DIR_DOWN];
+    default:
+      return [DIR_RIGHT, DIR_DOWN, DIR_LEFT];
+  }
+}
+
+function buildWorldGraph(fromPoint, toPoint) {
+  const step = directionalPreferenceStubLength;
+  const xValues = getUniqueNumbers([
+    fromPoint.x - step * 2,
+    fromPoint.x - step,
+    fromPoint.x,
+    fromPoint.x + step,
+    fromPoint.x + step * 2,
+    toPoint.x - step * 2,
+    toPoint.x - step,
+    toPoint.x,
+    toPoint.x + step,
+    toPoint.x + step * 2,
+  ]);
+  const yValues = getUniqueNumbers([
+    fromPoint.y - step * 2,
+    fromPoint.y - step,
+    fromPoint.y,
+    fromPoint.y + step,
+    fromPoint.y + step * 2,
+    toPoint.y - step * 2,
+    toPoint.y - step,
+    toPoint.y,
+    toPoint.y + step,
+    toPoint.y + step * 2,
+  ]);
+  const nodes = [];
+  const indexByKey = new Map();
+  const indexByGrid = new Map();
+
+  yValues.forEach((y, yIndex) => {
+    xValues.forEach((x, xIndex) => {
+      const nodeIndex = nodes.length;
+      nodes.push({ x, y, xIndex, yIndex });
+      indexByKey.set(`${x}|${y}`, nodeIndex);
+      indexByGrid.set(`${xIndex}|${yIndex}`, nodeIndex);
+    });
+  });
+
+  const startIndex = indexByKey.get(`${fromPoint.x}|${fromPoint.y}`);
+  const endIndex = indexByKey.get(`${toPoint.x}|${toPoint.y}`);
+  return { nodes, xValues, yValues, indexByGrid, startIndex, endIndex };
+}
+
+function getGraphNeighbors(graph, nodeIndex) {
+  const node = graph.nodes[nodeIndex];
+  const neighbors = [];
+  const deltas = [
+    { x: 1, y: 0 },
+    { x: -1, y: 0 },
+    { x: 0, y: 1 },
+    { x: 0, y: -1 },
+  ];
+
+  deltas.forEach((delta) => {
+    const neighborGridKey = `${node.xIndex + delta.x}|${node.yIndex + delta.y}`;
+    const neighborIndex = graph.indexByGrid.get(neighborGridKey);
+    if (typeof neighborIndex !== 'number') return;
+    const neighborNode = graph.nodes[neighborIndex];
+    const direction = getSegmentDirection(node, neighborNode);
+    if (!direction) return;
+    neighbors.push({
+      neighborIndex,
+      direction,
+      length: getManhattanDistance(node, neighborNode),
+    });
+  });
+
+  return neighbors;
+}
+
+function rebuildPathPointsFromState(finalState, statesByKey, graph) {
+  const nodeIndices = [];
+  let currentState = finalState;
+  while (currentState) {
+    nodeIndices.push(currentState.nodeIndex);
+    currentState = currentState.parentStateKey
+      ? statesByKey.get(currentState.parentStateKey) ?? null
+      : null;
+  }
+  nodeIndices.reverse();
+  return nodeIndices.map((nodeIndex) => {
+    const node = graph.nodes[nodeIndex];
+    return { x: node.x, y: node.y };
+  });
+}
+
+function findPathByDirectionPlan(graph, directionPlan) {
+  if (!directionPlan?.length) return null;
+  const startState = {
+    stateKey: `${graph.startIndex}|0|0`,
+    nodeIndex: graph.startIndex,
+    directionIndex: 0,
+    hasMovedInCurrentDirection: false,
+    distance: 0,
+    parentStateKey: null,
+  };
+  const statesByKey = new Map([[startState.stateKey, startState]]);
+  const openStateKeys = [startState.stateKey];
+
+  while (openStateKeys.length > 0) {
+    const stateKey = openStateKeys.shift();
+    const currentState = stateKey ? statesByKey.get(stateKey) : null;
+    if (!currentState) continue;
+
+    const isAtEnd =
+      currentState.nodeIndex === graph.endIndex &&
+      currentState.directionIndex === directionPlan.length - 1 &&
+      currentState.hasMovedInCurrentDirection;
+    if (isAtEnd) {
+      return {
+        points: rebuildPathPointsFromState(currentState, statesByKey, graph),
+        score: {
+          bendCount: directionPlan.length - 1,
+          distance: currentState.distance,
+        },
+      };
+    }
+
+    if (
+      currentState.hasMovedInCurrentDirection &&
+      currentState.directionIndex < directionPlan.length - 1
+    ) {
+      const nextDirectionIndex = currentState.directionIndex + 1;
+      const switchStateKey = `${currentState.nodeIndex}|${nextDirectionIndex}|0`;
+      const switchState = {
+        stateKey: switchStateKey,
+        nodeIndex: currentState.nodeIndex,
+        directionIndex: nextDirectionIndex,
+        hasMovedInCurrentDirection: false,
+        distance: currentState.distance,
+        parentStateKey: stateKey,
+      };
+      const existingSwitchState = statesByKey.get(switchStateKey);
+      if (!existingSwitchState || switchState.distance < existingSwitchState.distance) {
+        statesByKey.set(switchStateKey, switchState);
+        openStateKeys.push(switchStateKey);
+      }
+    }
+
+    const requiredDirection = directionPlan[currentState.directionIndex];
+    const neighbors = getGraphNeighbors(graph, currentState.nodeIndex);
+    neighbors.forEach((neighbor) => {
+      if (neighbor.direction !== requiredDirection) return;
+      const nextDistance = currentState.distance + neighbor.length;
+      const nextStateKey = `${neighbor.neighborIndex}|${currentState.directionIndex}|1`;
+      const nextState = {
+        stateKey: nextStateKey,
+        nodeIndex: neighbor.neighborIndex,
+        directionIndex: currentState.directionIndex,
+        hasMovedInCurrentDirection: true,
+        distance: nextDistance,
+        parentStateKey: stateKey,
+      };
+      const existingNextState = statesByKey.get(nextStateKey);
+      if (!existingNextState || nextDistance < existingNextState.distance) {
+        statesByKey.set(nextStateKey, nextState);
+        openStateKeys.push(nextStateKey);
+      }
+    });
+  }
+
+  return null;
+}
+
+function compressPathPoints(points) {
+  if (points.length <= 2) return points;
+  const compressed = [points[0]];
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const pointA = compressed[compressed.length - 1];
+    const pointB = points[index];
+    const pointC = points[index + 1];
+    const isVertical = pointA.x === pointB.x && pointB.x === pointC.x;
+    const isHorizontal = pointA.y === pointB.y && pointB.y === pointC.y;
+    if (!isVertical && !isHorizontal) {
+      compressed.push(pointB);
+    }
+  }
+  compressed.push(points[points.length - 1]);
+  return compressed;
+}
+
+function buildOrthogonalFallbackPoints(fromPoint, toPoint, directionPlan) {
+  if (fromPoint.x === toPoint.x || fromPoint.y === toPoint.y) {
+    return [fromPoint, toPoint];
+  }
+
+  const firstDirection = directionPlan?.[0] ?? null;
+  const step = directionalPreferenceStubLength;
+  const points = [fromPoint];
+
+  if (firstDirection === DIR_UP || firstDirection === DIR_DOWN) {
+    const pivotY = fromPoint.y + (firstDirection === DIR_DOWN ? step : -step);
+    points.push({ x: fromPoint.x, y: pivotY });
+    points.push({ x: toPoint.x, y: pivotY });
+    points.push(toPoint);
+    return compressPathPoints(points);
+  }
+
+  if (firstDirection === DIR_LEFT || firstDirection === DIR_RIGHT) {
+    const pivotX = fromPoint.x + (firstDirection === DIR_RIGHT ? step : -step);
+    points.push({ x: pivotX, y: fromPoint.y });
+    points.push({ x: pivotX, y: toPoint.y });
+    points.push(toPoint);
+    return compressPathPoints(points);
+  }
+
+  points.push({ x: toPoint.x, y: fromPoint.y });
+  points.push(toPoint);
+  return compressPathPoints(points);
+}
+
+function chooseBestOrthogonalPath(fromPoint, toPoint, startPreference, endPreference) {
+  if (fromPoint.x === toPoint.x && fromPoint.y === toPoint.y) {
+    return {
+      points: [fromPoint, toPoint],
+      caseKey: 'samePoint',
+      directionPlan: [],
+    };
+  }
+
+  const graph = buildWorldGraph(fromPoint, toPoint);
+  const positionKey = getRelativePositionKey(fromPoint, toPoint);
+  const normalizedStartPreference = normalizePreferenceForCase(startPreference, fromPoint, toPoint);
+  const normalizedEndPreference = normalizePreferenceForCase(endPreference, toPoint, fromPoint);
+  const caseKey = `${positionKey}|${normalizedStartPreference}|${normalizedEndPreference}`;
+  const directionPlan = getDirectionPlanByCaseKey(caseKey);
+
+  let finalResult = findPathByDirectionPlan(graph, directionPlan);
+
+  if (!finalResult) {
+    return {
+      points: buildOrthogonalFallbackPoints(fromPoint, toPoint, directionPlan),
+      caseKey,
+      directionPlan,
+    };
+  }
+  return {
+    points: compressPathPoints(finalResult.points),
+    caseKey,
+    directionPlan,
+  };
 }
 
 function cloneDirectionPreferences(directionPreferences) {
@@ -284,18 +862,30 @@ function buildRecEditableSegments(sourceX, sourceY, targetX, targetY, controlPoi
 
   return pathPoints.slice(0, -1).map((fromPoint, index) => {
     const toPoint = pathPoints[index + 1];
-    const direction = resolveSegmentDirection(index, directionPreferences);
-    const isHigherPointHorizontalFirst = direction === 'horizontal';
-    const pathParts = [`M ${fromPoint.x} ${fromPoint.y}`];
-    appendRightAngleSegment(
-      pathParts,
+    const { startEmissionDirection, endEmissionDirection } = resolveSegmentPreferences(
+      index,
+      directionPreferences
+    );
+    const routingResult = chooseBestOrthogonalPath(
       fromPoint,
       toPoint,
-      isHigherPointHorizontalFirst
+      startEmissionDirection,
+      endEmissionDirection
     );
+    const orthogonalPoints = routingResult.points;
+    const pathParts = orthogonalPoints.map((point, pointIndex) =>
+      pointIndex === 0 ? `M ${point.x} ${point.y}` : `L ${point.x} ${point.y}`
+    );
+    const debugLabelPosition = {
+      x: fromPoint.x + 6,
+      y: fromPoint.y - 6,
+    };
     return {
       index,
       path: pathParts.join(' '),
+      debugCaseKey: routingResult.caseKey,
+      debugDirectionPlan: routingResult.directionPlan,
+      debugLabelPosition,
     };
   });
 }
@@ -351,6 +941,10 @@ const EditableRecEdge = memo(function EditableRecEdge({
   }, [sourceX, sourceY, targetX, targetY, absoluteControlPoints, directionPreferences]);
 
   const selectedTarget = edgeMenu?.selectedTarget ?? null;
+  const isSegmentSelectedOnCurrentEdge =
+    selectedTarget?.edgeId === id &&
+    selectedTarget?.controlPointIndex === null &&
+    typeof selectedTarget?.segmentIndex === 'number';
   const handleSegmentContextMenu = useCallback(
     (event, segmentIndex) => {
       event.preventDefault();
@@ -481,6 +1075,20 @@ const EditableRecEdge = memo(function EditableRecEdge({
               onClick={(event) => handleSegmentClick(event, segment.index)}
               onContextMenu={(event) => handleSegmentContextMenu(event, segment.index)}
             />
+            {isSegmentSelected ? (
+              <text
+                className="editable-rec-edge-debug-label"
+                x={segment.debugLabelPosition.x}
+                y={segment.debugLabelPosition.y}
+              >
+                <tspan x={segment.debugLabelPosition.x} dy="0">
+                  {segment.debugCaseKey}
+                </tspan>
+                <tspan x={segment.debugLabelPosition.x} dy="12">
+                  {segment.debugDirectionPlan.join(' -> ')}
+                </tspan>
+              </text>
+            ) : null}
           </g>
         );
       })}
@@ -493,6 +1101,11 @@ const EditableRecEdge = memo(function EditableRecEdge({
           onContextMenu={(event) => handleEndpointContextMenu(event, 'start')}
         />
         <circle className="editable-rec-edge-endpoint" cx={sourceX} cy={sourceY} r={3} />
+        {isSegmentSelectedOnCurrentEdge ? (
+          <text className="editable-rec-edge-endpoint-label" x={sourceX + 8} y={sourceY - 8}>
+            start
+          </text>
+        ) : null}
       </g>
       <g>
         <circle
@@ -503,6 +1116,11 @@ const EditableRecEdge = memo(function EditableRecEdge({
           onContextMenu={(event) => handleEndpointContextMenu(event, 'end')}
         />
         <circle className="editable-rec-edge-endpoint" cx={targetX} cy={targetY} r={3} />
+        {isSegmentSelectedOnCurrentEdge ? (
+          <text className="editable-rec-edge-endpoint-label" x={targetX + 8} y={targetY - 8}>
+            end
+          </text>
+        ) : null}
       </g>
       {normalizedControlPoints.map((point) => {
         const isControlPointSelected =
@@ -553,7 +1171,7 @@ const initialEdges = [
     data: {
       controlPoints: [],
       directionPreferences: {
-        start: { next: 'horizontal' },
+        start: { next: 'right' },
         controlPoints: [],
         end: { prev: null },
       },
@@ -621,7 +1239,7 @@ export default function EdgeRecEditableFlow() {
             data: {
               controlPoints: [],
               directionPreferences: {
-                start: { next: 'horizontal' },
+                start: { next: 'right' },
                 controlPoints: [],
                 end: { prev: null },
               },
@@ -681,7 +1299,7 @@ export default function EdgeRecEditableFlow() {
           ? selectedDirectionPreferences.start.next
           : null;
 
-    const startSideChildren = orientationOptions.map((option) => ({
+    const startSideChildren = directionOptions.map((option) => ({
       type: 'item',
       name: option.label,
       action: 'set-side-direction',
@@ -696,7 +1314,7 @@ export default function EdgeRecEditableFlow() {
       },
     }));
 
-    const endSideChildren = orientationOptions.map((option) => ({
+    const endSideChildren = directionOptions.map((option) => ({
       type: 'item',
       name: option.label,
       action: 'set-side-direction',
@@ -713,13 +1331,13 @@ export default function EdgeRecEditableFlow() {
 
     items.push({
       type: 'menu',
-      name: 'set start-side orientation',
+      name: 'set start-side direction',
       disabled: !canSetStartSide,
       children: startSideChildren,
     });
     items.push({
       type: 'menu',
-      name: 'set end-side orientation',
+      name: 'set end-side direction',
       disabled: !canSetEndSide,
       children: endSideChildren,
     });
@@ -753,12 +1371,11 @@ export default function EdgeRecEditableFlow() {
                     ...controlPoints.slice(insertIndex),
                   ];
             const splitSegmentIndex = insertIndex === -1 ? controlPoints.length : insertIndex;
-            const splitDirection = resolveSegmentDirection(splitSegmentIndex, directionPreferences);
             const nextDirectionPreferences = {
               start: { next: directionPreferences.start.next },
               controlPoints: [
                 ...directionPreferences.controlPoints.slice(0, splitSegmentIndex),
-                { prev: null, next: splitDirection },
+                { prev: null, next: null },
                 ...directionPreferences.controlPoints.slice(splitSegmentIndex),
               ],
               end: { prev: directionPreferences.end.prev },
@@ -785,12 +1402,6 @@ export default function EdgeRecEditableFlow() {
               controlPoints.length
             );
             const removeIndex = menuState.controlPointIndex;
-            const leftSegmentDirection = resolveSegmentDirection(removeIndex, directionPreferences);
-            const rightSegmentDirection = resolveSegmentDirection(removeIndex + 1, directionPreferences);
-            const mergedSegmentDirection =
-              leftSegmentDirection === rightSegmentDirection
-                ? leftSegmentDirection
-                : leftSegmentDirection;
             const nextDirectionPreferences = {
               start: { next: directionPreferences.start.next },
               controlPoints: directionPreferences.controlPoints.filter(
@@ -798,12 +1409,6 @@ export default function EdgeRecEditableFlow() {
               ),
               end: { prev: directionPreferences.end.prev },
             };
-            if (removeIndex === 0) {
-              nextDirectionPreferences.start.next = mergedSegmentDirection;
-            } else if (nextDirectionPreferences.controlPoints[removeIndex - 1]) {
-              nextDirectionPreferences.controlPoints[removeIndex - 1].next =
-                mergedSegmentDirection;
-            }
             return {
               ...edge,
               data: {

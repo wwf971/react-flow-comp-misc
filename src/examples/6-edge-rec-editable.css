@@ -17,6 +17,21 @@
   cursor: context-menu;
 }
 
+.editable-rec-edge-debug-label {
+  fill: #222222;
+  font-size: 10px;
+  pointer-events: all;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+.editable-rec-edge-endpoint-label {
+  fill: #222222;
+  font-size: 10px;
+  pointer-events: none;
+}
+
 .editable-rec-edge-control-point {
   fill: rgba(70, 70, 70, 0.5);
   stroke: rgba(50, 50, 50, 0.8);
