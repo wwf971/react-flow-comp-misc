@@ -1,0 +1,60 @@
+.er-table-flow-wrapper {
+  background: #fbfbfb;
+}
+
+.react-flow__node-erTable.er-table-flow-node {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.er-table-node-root {
+  position: relative;
+  width: 280px;
+  border: 1px solid #d5d9df;
+  border-radius: 2px;
+  background: #ffffff;
+  overflow: visible;
+}
+
+.er-table-node-title {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 16px;
+  padding: 3px 6px;
+  border-bottom: 1px solid #eceff3;
+  color: #2a3340;
+  background: #f6f8fb;
+}
+
+.er-table-node-view-wrap {
+  pointer-events: auto;
+}
+
+.er-table-node-view-wrap .folder-view-container {
+  border: none;
+  border-radius: 0;
+}
+
+.er-table-node-view-wrap .folder-header-cell {
+  padding: 4px 6px;
+}
+
+.er-table-node-view-wrap .folder-body-cell {
+  padding: 3px 6px;
+}
+
+.er-table-node-view-wrap .folder-body-row,
+.er-table-node-view-wrap .folder-header {
+  font-size: 11px;
+}
+
+.er-table-row-handle {
+  width: 8px;
+  height: 8px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #5c6573;
+  border-radius: 2px;
+  background: #ffffff;
+}
