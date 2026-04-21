@@ -1,0 +1,29 @@
+import { observer } from 'mobx-react-lite';
+import { useSlideStore } from './contentStore';
+
+const CompMetadata = observer(({ data, containerId }: any) => {
+  const store = useSlideStore();
+  const containerData = store.getContainerData(containerId);
+  const containerSize = store.getContainerSize(containerId);
+
+  return (
+    <div className="slide-meta-root">
+      <div className="slide-meta-title">{data?.title ?? 'CompMetadata'}</div>
+      <div className="slide-meta-note">{data?.note ?? '-'}</div>
+      <div className="slide-meta-grid">
+        <div className="slide-meta-key">containerId</div>
+        <div className="slide-meta-val">{containerId}</div>
+        <div className="slide-meta-key">width(px)</div>
+        <div className="slide-meta-val">{containerSize.pixelX}</div>
+        <div className="slide-meta-key">height(px)</div>
+        <div className="slide-meta-val">{containerSize.pixelY}</div>
+        <div className="slide-meta-key">width(ratio)</div>
+        <div className="slide-meta-val">{containerData?.size.x?.toFixed(3) ?? '-'}</div>
+        <div className="slide-meta-key">height(ratio)</div>
+        <div className="slide-meta-val">{containerData?.size.y?.toFixed(3) ?? '-'}</div>
+      </div>
+    </div>
+  );
+});
+
+export default CompMetadata;

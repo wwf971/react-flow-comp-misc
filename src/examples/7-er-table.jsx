@@ -10,7 +10,7 @@ import {
   useViewport,
   useUpdateNodeInternals,
 } from 'reactflow';
-import FolderView from '../../../../2025/react-comp-misc/src/layout/folder/FolderView';
+import { FolderView } from '@wwf971/react-comp-misc';
 import {
   EdgeRecMenuContext,
   editableRecEdgeTypes,
@@ -149,6 +149,7 @@ const ErTableNode = memo(function ErTableNode({ id, data }) {
           columnsOrder={erTableColumnsOrder}
           columnsSizeInit={erTableColumnsSize}
           rows={rows}
+          isLastColumnFilled={true}
           showStatusBar={false}
           selectionMode="none"
           listOnly

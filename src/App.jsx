@@ -11,6 +11,7 @@ import LayoutFlow from './examples/5-layouting.jsx';
 import EdgeBezierEditableFlow from './examples/6-edge-bezier-editable.jsx';
 import EdgeRecEditableFlow from './examples/6-edge-rec-editable.jsx';
 import ErTableFlow from './examples/7-er-table.jsx';
+import SlideSystemExample from './examples/8-slide-system.jsx';
 import { GraphStoreProvider } from './examples/storeExapmle';
 
 const exampleItems = [
@@ -67,6 +68,12 @@ const exampleItems = [
     label: 'ER Table',
     description: 'Database tables with row-level custom handles.',
     component: ErTableFlow,
+  },
+  {
+    key: 'slide-system',
+    label: 'Slide + MobX',
+    description: 'Slides -> Slide -> Container -> Comp render hierarchy.',
+    component: SlideSystemExample,
   },
 ];
 
