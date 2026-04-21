@@ -116,19 +116,30 @@ const resolveCursorClass = (dir) => {
   return 'cursor-nwse';
 };
 
-const CompContainer = observer(({ containerId, pagePixelSize, getComp }: any) => {
+const CompContainer = observer(({ containerId, getComp }: any) => {
   const store = useSlideStore();
   const containerData = store.getContainerData(containerId);
   const isSelected = store.selectedContainerId === containerId;
   const [isHovering, setIsHovering] = useState(false);
   const interactionRef = useRef(null);
+  const containerRef = useRef(null);
 
   useEffect(() => {
-    if (!containerData) return;
-    const pixelX = Math.round((containerData.size.x ?? 0) * (pagePixelSize.width ?? 0));
-    const pixelY = Math.round((containerData.size.y ?? 0) * (pagePixelSize.height ?? 0));
-    store.setContainerPixelSize(containerId, { pixelX, pixelY });
-  }, [containerData, containerId, pagePixelSize.height, pagePixelSize.width, store]);
+    const element = containerRef.current;
+    if (!element) return undefined;
+    const resizeObserver = new ResizeObserver((entries) => {
+      const nextRect = entries[0]?.contentRect;
+      if (!nextRect) return;
+      store.setContainerPixelSize(containerId, {
+        pixelX: Math.round(nextRect.width),
+        pixelY: Math.round(nextRect.height),
+      });
+    });
+    resizeObserver.observe(element);
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, [containerId, store]);
 
   useEffect(() => {
     return () => {
@@ -140,17 +151,15 @@ const CompContainer = observer(({ containerId, pagePixelSize, getComp }: any) =>
     };
   }, []);
 
-  const beginInteraction = (event, mode, dir) => {
+  const startInteraction = (startPointer, mode, dir) => {
     if (!containerData) return;
-    event.preventDefault();
-    event.stopPropagation();
-
     store.setSelectedContainer(containerId);
 
     const startRect = toRectFromContainer(containerData);
-    const startPointer = { x: event.clientX, y: event.clientY };
-    const safeWidth = Math.max(pagePixelSize.width || 0, 1);
-    const safeHeight = Math.max(pagePixelSize.height || 0, 1);
+    const pageElement = containerRef.current?.parentElement;
+    const pageRect = pageElement?.getBoundingClientRect();
+    const safeWidth = Math.max(pageRect?.width || 0, 1);
+    const safeHeight = Math.max(pageRect?.height || 0, 1);
 
     const onPointerMove = (nextEvent) => {
       nextEvent.preventDefault();
@@ -209,12 +218,23 @@ const CompContainer = observer(({ containerId, pagePixelSize, getComp }: any) =>
     window.addEventListener('pointerup', onPointerUp);
   };
 
+  const beginInteraction = (event, mode, dir) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    startInteraction({ x: event.clientX, y: event.clientY }, mode, dir);
+  };
+
   const Comp = useMemo(() => {
     if (!containerData) return null;
-    return getComp(containerData.compName);
-  }, [containerData, getComp]);
+    const compData = store.getCompData(containerData.compId);
+    if (!compData) return null;
+    return getComp(compData.compName);
+  }, [containerData, getComp, store]);
 
   if (!containerData || !Comp) return null;
+  const compData = store.getCompData(containerData.compId);
+  if (!compData) return null;
 
   const containerStyle = {
     left: `${containerData.pos.x * 100}%`,
@@ -223,8 +243,18 @@ const CompContainer = observer(({ containerId, pagePixelSize, getComp }: any) =>
     height: `${containerData.size.y * 100}%`,
   };
 
+  const requestContainerMoveByPointer = (event) => {
+    beginInteraction(event, 'move', '');
+  };
+
+  const requestContainerMoveByPoint = (point) => {
+    if (!point) return;
+    startInteraction({ x: point.x, y: point.y }, 'move', '');
+  };
+
   return (
     <div
+      ref={containerRef}
       className={`slide-comp-wrap ${isSelected ? 'is-selected' : ''}`}
       style={containerStyle}
       onPointerDown={(event) => {
@@ -245,7 +275,13 @@ const CompContainer = observer(({ containerId, pagePixelSize, getComp }: any) =>
       </div>
 
       <div className="slide-comp-content">
-        <Comp data={containerData.compData} containerId={containerId} />
+        <Comp
+          data={compData.compData}
+          containerId={containerId}
+          compId={compData.id}
+          requestContainerMoveByPointer={requestContainerMoveByPointer}
+          requestContainerMoveByPoint={requestContainerMoveByPoint}
+        />
       </div>
 
       {isSelected &&

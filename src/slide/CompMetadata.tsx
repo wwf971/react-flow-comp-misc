@@ -1,13 +1,19 @@
 import { observer } from 'mobx-react-lite';
 import { useSlideStore } from './contentStore';
 
-const CompMetadata = observer(({ data, containerId }: any) => {
+const CompMetadata = observer(({ data, containerId, requestContainerMoveByPointer }: any) => {
   const store = useSlideStore();
   const containerData = store.getContainerData(containerId);
   const containerSize = store.getContainerSize(containerId);
 
   return (
-    <div className="slide-meta-root">
+    <div
+      className="slide-meta-root"
+      onPointerDown={(event) => {
+        if (!requestContainerMoveByPointer) return;
+        requestContainerMoveByPointer(event);
+      }}
+    >
       <div className="slide-meta-title">{data?.title ?? 'CompMetadata'}</div>
       <div className="slide-meta-note">{data?.note ?? '-'}</div>
       <div className="slide-meta-grid">
