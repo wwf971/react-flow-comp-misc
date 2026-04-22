@@ -1,15 +1,16 @@
 import { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
-import { useSlideStore } from './contentStore';
+import { useSlideStore } from '../contentStore';
 
 const CompTextMultiple = observer(
-  ({ data, containerId, compId, requestContainerMoveByPoint }: any) => {
+  ({ data, containerId, compId, requestContainerMoveByPoint, isReadOnly }: any) => {
   const store = useSlideStore();
   const textareaRef = useRef(null);
   const dragStateRef = useRef<any>(null);
   const textValue = data?.text ?? '';
   const isSelected = store.selectedContainerId === containerId;
   const isEditing = store.isCompEditing(compId);
+  const containerSize = store.getContainerSize(containerId);
 
   const requestFit = () => {
     const element = textareaRef.current;
@@ -25,21 +26,35 @@ const CompTextMultiple = observer(
     const currentContainerSize = store.getContainerSize(containerId);
     const initialPixelX = data?.initialPixelSize?.pixelX ?? 0;
     const initialPixelY = data?.initialPixelSize?.pixelY ?? 0;
+    const nextPixelX = Math.max(currentContainerSize.pixelX, initialPixelX);
+    const nextPixelY = Math.max(measuredPixelY, initialPixelY);
+    if (
+      nextPixelX === currentContainerSize.pixelX &&
+      nextPixelY === currentContainerSize.pixelY
+    ) {
+      return;
+    }
     store.requestContainerFitToPixelSize(containerId, {
-      pixelX: Math.max(currentContainerSize.pixelX, initialPixelX),
-      pixelY: Math.max(measuredPixelY, initialPixelY),
+      pixelX: nextPixelX,
+      pixelY: nextPixelY,
     });
   };
 
   useEffect(() => {
     requestFit();
-  }, [textValue]);
+  }, [textValue, containerSize.pixelX, containerSize.pixelY, data?.initialPixelSize?.pixelX, data?.initialPixelSize?.pixelY]);
 
   useEffect(() => {
     if (!isSelected && isEditing) {
       store.clearEditingComp();
     }
   }, [isSelected, isEditing, store]);
+
+  useEffect(() => {
+    if (isReadOnly && isEditing) {
+      store.clearEditingComp();
+    }
+  }, [isReadOnly, isEditing, store]);
 
   useEffect(() => {
     if (!isEditing) return;
@@ -67,8 +82,10 @@ const CompTextMultiple = observer(
         <textarea
           ref={textareaRef}
           className="slide-textarea"
+          readOnly={isReadOnly}
           value={textValue}
           onChange={(event) => {
+            if (isReadOnly) return;
             store.requestContainerCompDataUpdate(containerId, {
               text: event.target.value,
             });
@@ -78,6 +95,7 @@ const CompTextMultiple = observer(
         <div
           className="slide-text-view"
           onPointerDown={(event) => {
+            if (isReadOnly) return;
             if (event.button !== 0) return;
             const startX = event.clientX;
             const startY = event.clientY;
@@ -101,6 +119,7 @@ const CompTextMultiple = observer(
             window.addEventListener('pointerup', onPointerUp);
           }}
           onDoubleClick={() => {
+            if (isReadOnly) return;
             store.setSelectedContainer(containerId);
             if (compId) {
               store.setEditingComp(compId);

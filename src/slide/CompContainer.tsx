@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import DragIcon from '@wwf971/react-comp-misc/DragIcon';
+import Menu from '@wwf971/react-comp-misc/Menu';
 import { useSlideStore } from './contentStore';
 
 const HANDLE_DIRS = [
@@ -15,16 +16,17 @@ const HANDLE_DIRS = [
 ];
 
 const MIN_RATIO_SIZE = 0.03;
+const MAX_RATIO_SIZE = 4;
 
 const clamp = (value, min, max) => {
   return Math.min(max, Math.max(min, value));
 };
 
 const normalizeRect = (rect) => {
-  const width = clamp(rect.width, MIN_RATIO_SIZE, 1);
-  const height = clamp(rect.height, MIN_RATIO_SIZE, 1);
-  const left = clamp(rect.left, 0, 1 - width);
-  const top = clamp(rect.top, 0, 1 - height);
+  const width = clamp(rect.width, MIN_RATIO_SIZE, MAX_RATIO_SIZE);
+  const height = clamp(rect.height, MIN_RATIO_SIZE, MAX_RATIO_SIZE);
+  const left = Number.isFinite(rect.left) ? rect.left : 0;
+  const top = Number.isFinite(rect.top) ? rect.top : 0;
   return { left, top, width, height };
 };
 
@@ -120,7 +122,9 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
   const store = useSlideStore();
   const containerData = store.getContainerData(containerId);
   const isSelected = store.selectedContainerId === containerId;
+  const isReadOnly = store.isPersisting;
   const [isHovering, setIsHovering] = useState(false);
+  const [menuState, setMenuState] = useState<any>(null);
   const interactionRef = useRef(null);
   const containerRef = useRef(null);
 
@@ -152,6 +156,7 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
   }, []);
 
   const startInteraction = (startPointer, mode, dir) => {
+    if (isReadOnly) return;
     if (!containerData) return;
     store.setSelectedContainer(containerId);
 
@@ -219,6 +224,7 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
   };
 
   const beginInteraction = (event, mode, dir) => {
+    if (isReadOnly) return;
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
@@ -241,16 +247,95 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
     top: `${containerData.pos.y * 100}%`,
     width: `${containerData.size.x * 100}%`,
     height: `${containerData.size.y * 100}%`,
+    zIndex: containerData.layer ?? 0,
   };
 
   const requestContainerMoveByPointer = (event) => {
+    if (isReadOnly) return;
     beginInteraction(event, 'move', '');
   };
 
   const requestContainerMoveByPoint = (point) => {
+    if (isReadOnly) return;
     if (!point) return;
     startInteraction({ x: point.x, y: point.y }, 'move', '');
   };
+
+  const resolveAnchorPointByClient = (clientX, clientY) => {
+    const pageElement = containerRef.current?.parentElement;
+    const pageRect = pageElement?.getBoundingClientRect();
+    const safeWidth = Math.max(pageRect?.width || 0, 1);
+    const safeHeight = Math.max(pageRect?.height || 0, 1);
+    const ratioX = clamp((clientX - (pageRect?.left || 0)) / safeWidth, 0, 1);
+    const ratioY = clamp((clientY - (pageRect?.top || 0)) / safeHeight, 0, 1);
+    return { x: ratioX, y: ratioY };
+  };
+
+  const openContextMenuAtPoint = (clientX, clientY) => {
+    if (isReadOnly) return;
+    store.setSelectedContainer(containerId);
+    const nextState = {
+      position: { x: clientX, y: clientY },
+      anchorPoint: resolveAnchorPointByClient(clientX, clientY),
+    };
+    setMenuState(null);
+    requestAnimationFrame(() => {
+      setMenuState(nextState);
+    });
+  };
+
+  const openContextMenu = (event) => {
+    if (isReadOnly) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openContextMenuAtPoint(event.clientX, event.clientY);
+  };
+
+  const menuItems = useMemo(() => {
+    const newChildren = store.getAvailableCompNames().map((compName) => ({
+      type: 'item' as const,
+      name: compName,
+      data: { action: 'new-comp', compName },
+    }));
+    return [
+      {
+        type: 'menu' as const,
+        name: 'New',
+        children: newChildren,
+      },
+      {
+        type: 'menu' as const,
+        name: 'Layer',
+        children: [
+          {
+            type: 'item' as const,
+            name: 'One Layer Down',
+            data: { action: 'layer-down' },
+          },
+          {
+            type: 'item' as const,
+            name: 'One Layer Up',
+            data: { action: 'layer-up' },
+          },
+          {
+            type: 'item' as const,
+            name: 'To Bottom Layer',
+            data: { action: 'layer-bottom' },
+          },
+          {
+            type: 'item' as const,
+            name: 'To Top Layer',
+            data: { action: 'layer-top' },
+          },
+        ],
+      },
+      {
+        type: 'item' as const,
+        name: 'Delete',
+        data: { action: 'delete-container' },
+      },
+    ];
+  }, [store]);
 
   return (
     <div
@@ -258,15 +343,40 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
       className={`slide-comp-wrap ${isSelected ? 'is-selected' : ''}`}
       style={containerStyle}
       onPointerDown={(event) => {
+        if (isReadOnly) return;
         event.stopPropagation();
         store.setSelectedContainer(containerId);
       }}
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
+      onContextMenu={openContextMenu}
     >
       <div className={`slide-comp-toolbar ${isHovering || isSelected ? 'is-visible' : ''}`}>
         <button
+          className="slide-comp-menu-btn"
+          disabled={isReadOnly}
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            openContextMenuAtPoint(event.clientX, event.clientY);
+          }}
+        >
+          <svg
+            className="slide-comp-menu-icon"
+            width="12"
+            height="12"
+            viewBox="0 0 12 12"
+            aria-hidden="true"
+          >
+            <path d="M2 3.2H10" />
+            <path d="M2 6H10" />
+            <path d="M2 8.8H10" />
+          </svg>
+        </button>
+        <button
           className="slide-comp-drag-btn"
+          disabled={isReadOnly}
           onPointerDown={(event) => beginInteraction(event, 'move', '')}
           type="button"
         >
@@ -281,10 +391,12 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
           compId={compData.id}
           requestContainerMoveByPointer={requestContainerMoveByPointer}
           requestContainerMoveByPoint={requestContainerMoveByPoint}
+          isReadOnly={isReadOnly}
         />
       </div>
 
       {isSelected &&
+        !isReadOnly &&
         HANDLE_DIRS.map((dir) => (
           <button
             key={dir}
@@ -293,6 +405,34 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
             onPointerDown={(event) => beginInteraction(event, 'resize', dir)}
           />
         ))}
+      {menuState?.position && !isReadOnly ? (
+        <Menu
+          items={menuItems}
+          position={menuState.position}
+          onClose={() => setMenuState(null)}
+          onContextMenu={openContextMenu}
+          onItemClick={(item) => {
+            if (item?.data?.action === 'delete-container') {
+              store.requestDeleteContainer(containerId);
+            }
+            if (item?.data?.action === 'new-comp') {
+              store.requestCreateContainerWithComp(item?.data?.compName, menuState.anchorPoint);
+            }
+            if (item?.data?.action === 'layer-up') {
+              store.requestMoveContainerLayer(containerId, 'up');
+            }
+            if (item?.data?.action === 'layer-down') {
+              store.requestMoveContainerLayer(containerId, 'down');
+            }
+            if (item?.data?.action === 'layer-top') {
+              store.requestMoveContainerLayer(containerId, 'top');
+            }
+            if (item?.data?.action === 'layer-bottom') {
+              store.requestMoveContainerLayer(containerId, 'bottom');
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 });

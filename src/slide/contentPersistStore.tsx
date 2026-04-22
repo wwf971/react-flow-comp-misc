@@ -1,3 +1,5 @@
+import { makeAutoObservable } from 'mobx';
+
 const testImageLennaUrl = new URL('./test-image-lenna.png', import.meta.url).href;
 
 const createDemoPersistData = () => {
@@ -92,4 +94,354 @@ const createDemoPersistData = () => {
   };
 };
 
-export { createDemoPersistData };
+const cloneData = (data: any) => {
+  return JSON.parse(JSON.stringify(data ?? {}));
+};
+
+const PERSIST_BACKEND_BASE_URL =
+  (import.meta as any)?.env?.VITE_SLIDE_BACKEND_BASE_URL ?? 'http://127.0.0.1:5174';
+
+const collectDirtyIds = (dirtyMap: any) => {
+  return Object.keys(dirtyMap ?? {}).filter((id) => dirtyMap[id]);
+};
+
+const isDirtyStateEmpty = (dirtyState: any) => {
+  if (!dirtyState) return true;
+  return (
+    collectDirtyIds(dirtyState.updatedContainerIds).length === 0 &&
+    collectDirtyIds(dirtyState.updatedCompIds).length === 0 &&
+    collectDirtyIds(dirtyState.createdContainerIds).length === 0 &&
+    collectDirtyIds(dirtyState.deletedContainerIds).length === 0 &&
+    collectDirtyIds(dirtyState.createdCompIds).length === 0 &&
+    collectDirtyIds(dirtyState.deletedCompIds).length === 0
+  );
+};
+
+class SlideContentPersistStore {
+  persistedDataBySlideId = {};
+
+  slideItems = [];
+
+  resourceBytesById = {};
+
+  constructor(initialData: any) {
+    this.persistedDataBySlideId['local-demo'] = cloneData(initialData);
+    this.slideItems = [{ id: 'local-demo', name: 'Local Demo' }];
+    makeAutoObservable(this, {}, { autoBind: true });
+  }
+
+  getSnapshot(slideId: string = 'local-demo') {
+    return cloneData(this.persistedDataBySlideId[slideId] ?? createDemoPersistData());
+  }
+
+  async requestJson(url: string, options: any = {}) {
+    try {
+      const response = await fetch(url, options);
+      const payload = await response.json().catch(() => ({}));
+      return {
+        isOk: response.ok,
+        status: response.status,
+        payload,
+      };
+    } catch (_error) {
+      return {
+        isOk: false,
+        status: 0,
+        payload: {},
+      };
+    }
+  }
+
+  async listSlides() {
+    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`);
+    if (!result.isOk) {
+      return { ok: false, slides: this.slideItems, message: 'Failed to load slides' };
+    }
+    const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
+    if (slides.length > 0) {
+      this.slideItems = slides.map((slide: any) => ({
+        id: `${slide.id ?? ''}`,
+        name: `${slide.name ?? ''}`,
+      }));
+    }
+    return { ok: true, slides: this.slideItems };
+  }
+
+  async getSlideData(slideId: string) {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}/data`,
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, data: null, message: 'Failed to load slide data' };
+    }
+    const data = cloneData(result.payload.data ?? {});
+    this.persistedDataBySlideId[slideId] = data;
+    return { ok: true, data };
+  }
+
+  async createSlide(name: string) {
+    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name }),
+    });
+    if (!result.isOk || !result.payload?.ok || !result.payload?.slide) {
+      return { ok: false, message: 'Failed to create slide' };
+    }
+    const slide = {
+      id: `${result.payload.slide.id ?? ''}`,
+      name: `${result.payload.slide.name ?? ''}`,
+    };
+    this.slideItems = [...this.slideItems, slide];
+    if (result.payload.slide.data) {
+      this.persistedDataBySlideId[slide.id] = cloneData(result.payload.slide.data);
+    }
+    return { ok: true, slide, data: this.persistedDataBySlideId[slide.id] ?? null };
+  }
+
+  async renameSlide(slideId: string, name: string) {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name }),
+      },
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to rename slide' };
+    }
+    this.slideItems = this.slideItems.map((item) => {
+      if (item.id !== slideId) return item;
+      return { ...item, name };
+    });
+    return { ok: true };
+  }
+
+  async reinitDatabase() {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/admin/reinit-database`,
+      {
+        method: 'POST',
+      },
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: 'Failed to re-initialize database' };
+    }
+    const slides = Array.isArray(result.payload?.slides) ? result.payload.slides : [];
+    this.slideItems = slides.map((slide: any) => ({
+      id: `${slide.id ?? ''}`,
+      name: `${slide.name ?? ''}`,
+    }));
+    this.persistedDataBySlideId = {};
+    this.resourceBytesById = {};
+    return { ok: true, slides: this.slideItems };
+  }
+
+  async createResource(kind: 'bytes' | 'text') {
+    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/resources`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ kind }),
+    });
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to create resource' };
+    }
+    return {
+      ok: true,
+      resourceId: `${result.payload.resourceId ?? ''}`,
+    };
+  }
+
+  async setResourceBytes(resourceId: string, base64: string) {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/bytes`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ base64 }),
+      },
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to save resource bytes' };
+    }
+    const commaIndex = base64.indexOf(',');
+    const rawBase64 = commaIndex >= 0 ? base64.slice(commaIndex + 1) : base64;
+    this.resourceBytesById[resourceId] = rawBase64;
+    return { ok: true };
+  }
+
+  async getResourceBytes(resourceId: string) {
+    const cached = this.resourceBytesById[resourceId];
+    if (cached) return { ok: true, base64: cached };
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/bytes`,
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to load resource bytes' };
+    }
+    const base64 = `${result.payload.base64 ?? ''}`;
+    this.resourceBytesById[resourceId] = base64;
+    return { ok: true, base64 };
+  }
+
+  async setResourceText(resourceId: string, text: string) {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/text`,
+      {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ text }),
+      },
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to save resource text' };
+    }
+    return { ok: true };
+  }
+
+  async getResourceText(resourceId: string) {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/resources/${resourceId}/text`,
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to load resource text' };
+    }
+    return { ok: true, text: `${result.payload.text ?? ''}` };
+  }
+
+  async deleteSlide(slideId: string) {
+    const result = await this.requestJson(`${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}`, {
+      method: 'DELETE',
+    });
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to delete slide' };
+    }
+    this.slideItems = this.slideItems.filter((item) => item.id !== slideId);
+    delete this.persistedDataBySlideId[slideId];
+    return { ok: true };
+  }
+
+  applyDirtyPagesToMemory(
+    slideId: string,
+    runtimeData: any,
+    dirtyPageStateById: any,
+    dirtyPageIds: string[],
+  ) {
+    const persistedData = this.persistedDataBySlideId[slideId] ?? createDemoPersistData();
+    persistedData.metadata = cloneData(runtimeData?.metadata ?? {});
+    const runtimePageDataById = runtimeData?.pageDataById ?? {};
+    const runtimeContainerDataById = runtimeData?.containerDataById ?? {};
+    const runtimeCompDataById = runtimeData?.compDataById ?? {};
+
+    dirtyPageIds.forEach((pageId) => {
+      const dirtyState = dirtyPageStateById?.[pageId] ?? {};
+      const runtimePageData = runtimePageDataById[pageId];
+      if (!runtimePageData) return;
+
+      persistedData.pageDataById[pageId] = cloneData(runtimePageData);
+
+      collectDirtyIds(dirtyState.updatedContainerIds).forEach((containerId) => {
+        const containerData = runtimeContainerDataById[containerId];
+        if (!containerData) return;
+        persistedData.containerDataById[containerId] = cloneData(containerData);
+      });
+      collectDirtyIds(dirtyState.createdContainerIds).forEach((containerId) => {
+        const containerData = runtimeContainerDataById[containerId];
+        if (!containerData) return;
+        persistedData.containerDataById[containerId] = cloneData(containerData);
+      });
+      collectDirtyIds(dirtyState.deletedContainerIds).forEach((containerId) => {
+        delete persistedData.containerDataById[containerId];
+      });
+
+      collectDirtyIds(dirtyState.updatedCompIds).forEach((compId) => {
+        const compData = runtimeCompDataById[compId];
+        if (!compData) return;
+        persistedData.compDataById[compId] = cloneData(compData);
+      });
+      collectDirtyIds(dirtyState.createdCompIds).forEach((compId) => {
+        const compData = runtimeCompDataById[compId];
+        if (!compData) return;
+        persistedData.compDataById[compId] = cloneData(compData);
+      });
+      collectDirtyIds(dirtyState.deletedCompIds).forEach((compId) => {
+        delete persistedData.compDataById[compId];
+      });
+    });
+    this.persistedDataBySlideId[slideId] = persistedData;
+  }
+
+  async saveDirtyPages(slideId: string, runtimeData: any, dirtyPageStateById: any) {
+    const dirtyPageIds = Object.keys(dirtyPageStateById ?? {}).filter((pageId) => {
+      return !isDirtyStateEmpty(dirtyPageStateById[pageId]);
+    });
+    if (dirtyPageIds.length === 0) {
+      return { ok: true, savedPageIds: [] };
+    }
+
+    try {
+      const response = await fetch(
+        `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}/save-dirty`,
+        {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          metadata: runtimeData?.metadata ?? {},
+          pageDataById: runtimeData?.pageDataById ?? {},
+          containerDataById: runtimeData?.containerDataById ?? {},
+          compDataById: runtimeData?.compDataById ?? {},
+          dirtyPageStateById: dirtyPageStateById ?? {},
+        }),
+      },
+      );
+
+      if (!response.ok) {
+        return {
+          ok: false,
+          savedPageIds: [],
+          message: `Save failed: backend status ${response.status}`,
+        };
+      }
+
+      const result = await response.json();
+      if (!result?.ok) {
+        return {
+          ok: false,
+          savedPageIds: [],
+          message: result?.message ?? 'Save failed: backend returned error',
+        };
+      }
+
+      this.applyDirtyPagesToMemory(slideId, runtimeData, dirtyPageStateById, dirtyPageIds);
+      return {
+        ok: true,
+        savedPageIds: result?.savedPageIds ?? dirtyPageIds,
+      };
+    } catch (_error) {
+      return {
+        ok: false,
+        savedPageIds: [],
+        message: 'Save failed: cannot reach backend server',
+      };
+    }
+  }
+}
+
+const createDemoPersistStore = () => {
+  return new SlideContentPersistStore(createDemoPersistData());
+};
+
+export { SlideContentPersistStore, createDemoPersistData, createDemoPersistStore };
