@@ -1,12 +1,20 @@
+
+
+## temporarily make component container display overflown content.
+
+`CompIFrame` can open an iframe panel outside container bounds by using runtime-only overflow visibility in `contentStore` (`setContainerOverflowVisible`), so iframe open/close state is not persisted.
+## hierarchy
+
+```
 store
   -> Slides (provider + page switch toolbar)
   -> Slide (current page surface + layer)
   -> CompContainer (select, move, resize shell)
   -> Comp (resolved by getComp, e.g. text/image/metadata)
+```
 
 
-
-size system and full-window behavior
+## size system and full-window behavior
   - container geometry is ratio based: `pos.x/y` and `size.x/y` are percentages of `slide-page-layer`
   - drag/resize converts pointer delta by current page pixel size: `deltaX / pageRect.width`, `deltaY / pageRect.height`
   - component pixel size is derived by `ResizeObserver` on each `CompContainer`, so pixel values always depend on current layer size
@@ -20,3 +28,15 @@ size system and full-window behavior
       - `width: min(100vw, 100vh * aspectRatio)`
       - `height: min(100vh, 100vw / aspectRatio)`
     - `slide-page-layer` still stays `width:100%; height:100%`, so ratio coords and derived pixel sizes remain consistent
+
+
+## create new component on slide
+
+one way to create new component is via guidance component `CompSwitcher` in `/src/slide/comp/CompSwitcher.tsx`; available options are derived from `/src/slide/comp` with rule `CompXxxx.tsx -> Xxx`.
+
+
+## implement custom components
+
+see ./comp_custom_design.md
+
+

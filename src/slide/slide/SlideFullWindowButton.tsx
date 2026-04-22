@@ -5,8 +5,8 @@ const SlideFullWindowButton = ({ isFullWindow, onToggleFullWindow }: any) => {
         {isFullWindow ? (
           <svg
             className="slide-page-full-window-icon"
-            width="12"
-            height="12"
+            width="20"
+            height="20"
             viewBox="0 0 12 12"
             aria-hidden="true"
           >
@@ -18,8 +18,8 @@ const SlideFullWindowButton = ({ isFullWindow, onToggleFullWindow }: any) => {
         ) : (
           <svg
             className="slide-page-full-window-icon"
-            width="12"
-            height="12"
+            width="20"
+            height="20"
             viewBox="0 0 12 12"
             aria-hidden="true"
           >

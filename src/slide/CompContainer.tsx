@@ -17,6 +17,11 @@ const HANDLE_DIRS = [
 
 const MIN_RATIO_SIZE = 0.03;
 const MAX_RATIO_SIZE = 4;
+const FONT_SCALE_MIN = 0.4;
+const FONT_SCALE_MAX = 3;
+const FONT_SCALE_STEP = 0.05;
+const FONT_SCALE_HOLD_INTERVAL_MS = 90;
+const CONTAINER_Z_INDEX_BASE = 30;
 
 const clamp = (value, min, max) => {
   return Math.min(max, Math.max(min, value));
@@ -118,11 +123,107 @@ const resolveCursorClass = (dir) => {
   return 'cursor-nwse';
 };
 
+const FontScaleControl = ({ fontScaleValue, onChangeFontScale }: any) => {
+  const latestFontScaleRef = useRef(fontScaleValue);
+  const holdTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    latestFontScaleRef.current = fontScaleValue;
+  }, [fontScaleValue]);
+
+  useEffect(() => {
+    return () => {
+      if (!holdTimerRef.current) return;
+      window.clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    };
+  }, []);
+
+  const stopHold = () => {
+    if (!holdTimerRef.current) return;
+    window.clearInterval(holdTimerRef.current);
+    holdTimerRef.current = null;
+  };
+
+  const requestStep = (delta) => {
+    const nextValue = clamp(
+      Number((latestFontScaleRef.current + delta).toFixed(2)),
+      FONT_SCALE_MIN,
+      FONT_SCALE_MAX,
+    );
+    latestFontScaleRef.current = nextValue;
+    onChangeFontScale(nextValue);
+  };
+
+  const beginHold = (delta, event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    requestStep(delta);
+    stopHold();
+    holdTimerRef.current = window.setInterval(() => {
+      requestStep(delta);
+    }, FONT_SCALE_HOLD_INTERVAL_MS);
+    const releaseHold = () => {
+      stopHold();
+      window.removeEventListener('pointerup', releaseHold, true);
+      window.removeEventListener('blur', releaseHold);
+    };
+    window.addEventListener('pointerup', releaseHold, true);
+    window.addEventListener('blur', releaseHold);
+  };
+
+  return (
+    <div
+      className="slide-font-menu-control"
+      onClick={(event) => {
+        event.stopPropagation();
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+    >
+      <input
+        className="slide-font-menu-input"
+        value={`${fontScaleValue}`}
+        onChange={(event) => {
+          event.stopPropagation();
+          const nextValue = Number(event.target.value);
+          if (!Number.isFinite(nextValue)) return;
+          onChangeFontScale(clamp(nextValue, FONT_SCALE_MIN, FONT_SCALE_MAX));
+        }}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+        }}
+      />
+      <button
+        className="slide-font-menu-step-btn"
+        type="button"
+        onPointerDown={(event) => beginHold(FONT_SCALE_STEP, event)}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+          <polyline points="18,15 12,9 6,15" />
+        </svg>
+      </button>
+      <button
+        className="slide-font-menu-step-btn"
+        type="button"
+        onPointerDown={(event) => beginHold(-FONT_SCALE_STEP, event)}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
+          <polyline points="6,9 12,15 18,9" />
+        </svg>
+      </button>
+    </div>
+  );
+};
+
 const CompContainer = observer(({ containerId, getComp }: any) => {
   const store = useSlideStore();
   const containerData = store.getContainerData(containerId);
   const isSelected = store.selectedContainerId === containerId;
   const isReadOnly = store.isPersisting;
+  const isOverflowVisible = store.getIsContainerOverflowVisible(containerId);
+  const isPasteEnabled = store.getHasCopiedContainer();
   const [isHovering, setIsHovering] = useState(false);
   const [menuState, setMenuState] = useState<any>(null);
   const interactionRef = useRef(null);
@@ -247,7 +348,7 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
     top: `${containerData.pos.y * 100}%`,
     width: `${containerData.size.x * 100}%`,
     height: `${containerData.size.y * 100}%`,
-    zIndex: containerData.layer ?? 0,
+    zIndex: CONTAINER_Z_INDEX_BASE + (containerData.layer ?? 0),
   };
 
   const requestContainerMoveByPointer = (event) => {
@@ -292,6 +393,25 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
   };
 
   const menuItems = useMemo(() => {
+    const compName = compData?.compName ?? '';
+    const isFontAdjustableComp =
+      compName === 'CompTextSingleline' ||
+      compName === 'CompTextMultline' ||
+      compName === 'CompCode' ||
+      compName === 'CompIFrame' ||
+      compName === 'CompUrl';
+    const isIFrameComp = compName === 'CompIFrame';
+    const isUrlComp = compName === 'CompUrl';
+    const fontScaleValueRaw = Number(compData?.compData?.fontScale);
+    const fontScaleValue = Number.isFinite(fontScaleValueRaw) ? fontScaleValueRaw : 1;
+    const safeFontScale = clamp(fontScaleValue, FONT_SCALE_MIN, FONT_SCALE_MAX);
+    const fontScaleUnit = compData?.compData?.fontScaleUnit ?? '1/100 slide width';
+    const requestSetFontScale = (nextFontScale) => {
+      store.requestContainerCompDataUpdate(containerId, {
+        fontScale: clamp(nextFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX),
+        fontScaleUnit: '1/100 slide width',
+      });
+    };
     const newChildren = store.getAvailableCompNames().map((compName) => ({
       type: 'item' as const,
       name: compName,
@@ -330,12 +450,82 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
         ],
       },
       {
+        type: 'menu' as const,
+        name: 'Font',
+        disabled: !isFontAdjustableComp,
+        children: [
+          {
+            type: 'item' as const,
+            name: (
+              <FontScaleControl
+                fontScaleValue={safeFontScale}
+                onChangeFontScale={requestSetFontScale}
+              />
+            ),
+            data: { action: 'font-control' },
+          },
+          {
+            type: 'item' as const,
+            name: 'Decrease',
+            data: { action: 'font-decrease' },
+          },
+          {
+            type: 'item' as const,
+            name: 'Increase',
+            data: { action: 'font-increase' },
+          },
+          {
+            type: 'item' as const,
+            name: '0.8',
+            data: { action: 'font-set', fontScale: 0.8 },
+          },
+          {
+            type: 'item' as const,
+            name: '1.0',
+            data: { action: 'font-set', fontScale: 1.0 },
+          },
+          {
+            type: 'item' as const,
+            name: '1.2',
+            data: { action: 'font-set', fontScale: 1.2 },
+          },
+          {
+            type: 'item' as const,
+            name: '1.5',
+            data: { action: 'font-set', fontScale: 1.5 },
+          },
+        ],
+      },
+      {
+        type: 'item' as const,
+        name: 'Edit URL',
+        data: { action: 'url-edit' },
+        disabled: !isUrlComp,
+      },
+      {
+        type: 'item' as const,
+        name: 'Copy',
+        data: { action: 'copy-container' },
+      },
+      {
+        type: 'item' as const,
+        name: 'Paste',
+        data: { action: 'paste-container' },
+        disabled: !isPasteEnabled,
+      },
+      {
         type: 'item' as const,
         name: 'Delete',
         data: { action: 'delete-container' },
       },
+      {
+        type: 'item' as const,
+        name: 'Cancel IFrame',
+        data: { action: 'iframe-cancel' },
+        disabled: !isIFrameComp,
+      },
     ];
-  }, [store]);
+  }, [store, compData, containerId, isPasteEnabled]);
 
   return (
     <div
@@ -384,7 +574,7 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
         </button>
       </div>
 
-      <div className="slide-comp-content">
+      <div className={`slide-comp-content ${isOverflowVisible ? 'is-overflow-visible' : ''}`}>
         <Comp
           data={compData.compData}
           containerId={containerId}
@@ -415,6 +605,25 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
             if (item?.data?.action === 'delete-container') {
               store.requestDeleteContainer(containerId);
             }
+            if (item?.data?.action === 'copy-container') {
+              store.requestCopyContainer(containerId);
+            }
+            if (item?.data?.action === 'paste-container') {
+              store.requestPasteCopiedContainerToPage(
+                store.metadata.currentPageId,
+                menuState?.anchorPoint ?? null,
+              );
+            }
+            if (item?.data?.action === 'iframe-cancel') {
+              store.requestContainerCompDataUpdate(containerId, {
+                isIframeActive: false,
+              });
+              store.setContainerOverflowVisible(containerId, false);
+            }
+            if (item?.data?.action === 'url-edit') {
+              store.setSelectedContainer(containerId);
+              store.setEditingComp(compData.id);
+            }
             if (item?.data?.action === 'new-comp') {
               store.requestCreateContainerWithComp(item?.data?.compName, menuState.anchorPoint);
             }
@@ -429,6 +638,28 @@ const CompContainer = observer(({ containerId, getComp }: any) => {
             }
             if (item?.data?.action === 'layer-bottom') {
               store.requestMoveContainerLayer(containerId, 'bottom');
+            }
+            if (
+              item?.data?.action === 'font-set' ||
+              item?.data?.action === 'font-increase' ||
+              item?.data?.action === 'font-decrease'
+            ) {
+              const fontScaleValueRaw = Number(compData?.compData?.fontScale);
+              const fontScaleValue = Number.isFinite(fontScaleValueRaw) ? fontScaleValueRaw : 1;
+              let nextFontScale = fontScaleValue;
+              if (item?.data?.action === 'font-set') {
+                nextFontScale = Number(item?.data?.fontScale ?? 1);
+              }
+              if (item?.data?.action === 'font-increase') {
+                nextFontScale = fontScaleValue + FONT_SCALE_STEP;
+              }
+              if (item?.data?.action === 'font-decrease') {
+                nextFontScale = fontScaleValue - FONT_SCALE_STEP;
+              }
+              store.requestContainerCompDataUpdate(containerId, {
+                fontScale: clamp(nextFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX),
+                fontScaleUnit: '1/100 slide width',
+              });
             }
           }}
         />

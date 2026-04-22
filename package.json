@@ -15,6 +15,7 @@
     "@wwf971/react-comp-misc": "workspace:^",
     "cors": "^2.8.6",
     "express": "^5.2.1",
+    "highlight.js": "^11.11.1",
     "mobx": "^6.15.0",
     "mobx-react-lite": "^4.1.1",
     "pg": "^8.20.0",

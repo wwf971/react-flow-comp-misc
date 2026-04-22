@@ -203,7 +203,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
 
     const ratioX = nextPixelX / prevSize.pixelX;
     const ratioY = nextPixelY / prevSize.pixelY;
-    const resizeScale = Math.min(ratioX, ratioY);
+    const resizeScale = Math.sqrt(ratioX * ratioY);
     if (!Number.isFinite(resizeScale) || resizeScale <= 0) {
       prevContainerSizeRef.current = { pixelX: nextPixelX, pixelY: nextPixelY };
       return;
@@ -323,7 +323,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
           });
         }}
       />
-      {isPanEnabled || isZoomEnabled ? null : (
+      {!isEditEnabled && !isPanEnabled && !isZoomEnabled ? (
         <div
           className="slide-excalidraw-pan-blocker"
           onPointerDown={(event) => {
@@ -339,7 +339,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
             event.stopPropagation();
           }}
         />
-      )}
+      ) : null}
       <div
         className="slide-excalidraw-lock-panel"
         onWheelCapture={(event) => {

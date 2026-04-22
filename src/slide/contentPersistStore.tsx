@@ -58,7 +58,7 @@ const createDemoPersistData = () => {
     compDataById: {
       'comp-title-text': {
         id: 'comp-title-text',
-        compName: 'CompTextMultiple',
+        compName: 'CompTextMultline',
         compData: {
           text: 'Editable title line 1\nEditable title line 2',
           initialPixelSize: { pixelX: 320, pixelY: 84 },
@@ -66,7 +66,7 @@ const createDemoPersistData = () => {
       },
       'comp-cover-image': {
         id: 'comp-cover-image',
-        compName: 'CompImageExample',
+        compName: 'CompImage',
         compData: {
           isCover: true,
           imageUrl: testImageLennaUrl,
@@ -79,7 +79,7 @@ const createDemoPersistData = () => {
       },
       'comp-body-text': {
         id: 'comp-body-text',
-        compName: 'CompTextMultiple',
+        compName: 'CompTextMultline',
         compData: {
           text: 'You can edit this text.\nPress Enter for new lines.\nContainer auto-fits via store request.',
           initialPixelSize: { pixelX: 280, pixelY: 120 },

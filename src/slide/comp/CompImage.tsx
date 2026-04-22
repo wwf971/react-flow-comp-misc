@@ -3,7 +3,7 @@ import { observer } from 'mobx-react-lite';
 import Menu from '@wwf971/react-comp-misc/Menu';
 import { useSlideStore } from '../contentStore';
 
-const CompImageExample = observer(
+const CompImage = observer(
   ({ data, containerId, requestContainerMoveByPointer, isReadOnly }: any) => {
   const store = useSlideStore();
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -15,6 +15,7 @@ const CompImageExample = observer(
   const imageResourceId = data?.imageResourceId ?? '';
   const imageMimeType = data?.imageMimeType ?? 'image/png';
   const imageUrl = resourceImageUrl || data?.imageUrl || '';
+  const hasConfiguredImage = Boolean(imageResourceId || data?.imageUrl);
   const containerSize = store.getContainerSize(containerId);
   const hasImageData = typeof imageUrl === 'string' && imageUrl.length > 0;
   const isImageDataValid =
@@ -93,6 +94,7 @@ const CompImageExample = observer(
   };
 
   const computedErrorText = (() => {
+    if (!hasConfiguredImage) return '';
     if (errorText) return errorText;
     if (!hasImageData) return 'Image data is missing';
     if (!isImageDataValid) return 'Image data format is invalid';
@@ -147,6 +149,7 @@ const CompImageExample = observer(
           }}
         />
       ) : null}
+      {!hasConfiguredImage ? <div className="slide-image-empty">Paste an Image Here</div> : null}
       {computedErrorText ? <div className="slide-image-error">{computedErrorText}</div> : null}
       <div className="slide-image-size">
         {containerSize.pixelX} x {containerSize.pixelY}
@@ -188,4 +191,4 @@ const CompImageExample = observer(
   );
 });
 
-export default CompImageExample;
+export default CompImage;

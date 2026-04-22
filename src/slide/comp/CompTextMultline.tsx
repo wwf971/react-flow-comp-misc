@@ -2,15 +2,33 @@ import { useEffect, useRef } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useSlideStore } from '../contentStore';
 
-const CompTextMultiple = observer(
+const CompTextMultline = observer(
   ({ data, containerId, compId, requestContainerMoveByPoint, isReadOnly }: any) => {
   const store = useSlideStore();
+  const rootRef = useRef<any>(null);
   const textareaRef = useRef(null);
   const dragStateRef = useRef<any>(null);
   const textValue = data?.text ?? '';
   const isSelected = store.selectedContainerId === containerId;
   const isEditing = store.isCompEditing(compId);
   const containerSize = store.getContainerSize(containerId);
+  const containerData = store.getContainerData(containerId);
+  const fontScaleValueRaw = Number(data?.fontScale);
+  const fontScale = Number.isFinite(fontScaleValueRaw) ? fontScaleValueRaw : 1;
+  const containerRatioWidth = Number(containerData?.size?.x ?? 0);
+  const pagePixelWidth =
+    containerRatioWidth > 0 ? containerSize.pixelX / Math.max(containerRatioWidth, 0.0001) : 0;
+  const safePagePixelWidth = pagePixelWidth > 0 ? pagePixelWidth : 900;
+  const fontPixelSize = Math.min(
+    48,
+    Math.max(10, (safePagePixelWidth * Math.max(fontScale, 0.4)) / 100),
+  );
+
+  useEffect(() => {
+    const rootElement = rootRef.current;
+    if (!rootElement) return;
+    rootElement.style.setProperty('--slide-comp-font-size', `${fontPixelSize}px`);
+  }, [fontPixelSize]);
 
   const requestFit = () => {
     const element = textareaRef.current;
@@ -42,7 +60,12 @@ const CompTextMultiple = observer(
 
   useEffect(() => {
     requestFit();
-  }, [textValue, containerSize.pixelX, containerSize.pixelY, data?.initialPixelSize?.pixelX, data?.initialPixelSize?.pixelY]);
+  }, [
+    textValue,
+    fontPixelSize,
+    data?.initialPixelSize?.pixelX,
+    data?.initialPixelSize?.pixelY,
+  ]);
 
   useEffect(() => {
     if (!isSelected && isEditing) {
@@ -77,7 +100,7 @@ const CompTextMultiple = observer(
   }, []);
 
   return (
-    <div className="slide-text-root">
+    <div ref={rootRef} className="slide-text-root">
       {isEditing ? (
         <textarea
           ref={textareaRef}
@@ -136,4 +159,4 @@ const CompTextMultiple = observer(
   },
 );
 
-export default CompTextMultiple;
+export default CompTextMultline;

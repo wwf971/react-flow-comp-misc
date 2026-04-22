@@ -122,6 +122,12 @@ class SlideContentStore {
 
   persistFailureMessage = '';
 
+  temporarySwitcherByPageId = {};
+
+  temporaryOverflowVisibleContainerIdMap = {};
+
+  temporaryCopiedContainerPayload = null;
+
   constructor(seedData: any, persistStore: any = null) {
     this.persistStore = persistStore;
     this.metadata = {
@@ -161,17 +167,45 @@ class SlideContentStore {
   }
 
   getAvailableCompNames() {
-    return ['CompTextMultiple', 'CompImageExample', 'CompMetadata', 'CompExcalidraw'];
+    return [
+      'CompTextSingleline',
+      'CompTextMultline',
+      'CompCode',
+      'CompImage',
+      'CompMetadata',
+      'CompExcalidraw',
+      'CompIFrame',
+      'CompUrl',
+    ];
   }
 
   createDefaultCompData(compName) {
-    if (compName === 'CompTextMultiple') {
+    if (compName === 'CompTextSingleline') {
+      return {
+        text: 'New line',
+        initialPixelSize: { pixelX: 200, pixelY: 24 },
+        fontScale: 1,
+        fontScaleUnit: '1/100 slide width',
+      };
+    }
+    if (compName === 'CompTextMultline') {
       return {
         text: 'New text',
         initialPixelSize: { pixelX: 220, pixelY: 80 },
+        fontScale: 1,
+        fontScaleUnit: '1/100 slide width',
       };
     }
-    if (compName === 'CompImageExample') {
+    if (compName === 'CompCode') {
+      return {
+        codeText: "function greet(name) {\n  return `Hello, ${name}`;\n}",
+        language: 'javascript',
+        backgroundColor: '#111827',
+        fontScale: 1,
+        fontScaleUnit: '1/100 slide width',
+      };
+    }
+    if (compName === 'CompImage' || compName === 'CompImageExample') {
       return {
         isCover: true,
         imageResourceId: '',
@@ -183,6 +217,25 @@ class SlideContentStore {
       return {
         sceneResourceId: '',
         sceneVersion: 1,
+      };
+    }
+    if (compName === 'CompIFrame') {
+      return {
+        url: 'https://example.com',
+        iframeSizeRatioBySlideWidth: {
+          width: 0.7,
+          height: 0.42,
+        },
+        fontScale: 1.2,
+        fontScaleUnit: '1/100 slide width',
+        isIframeActive: false,
+      };
+    }
+    if (compName === 'CompUrl') {
+      return {
+        url: 'https://example.com',
+        fontScale: 1.2,
+        fontScaleUnit: '1/100 slide width',
       };
     }
     return {
@@ -213,6 +266,9 @@ class SlideContentStore {
       pixelY: 0,
     };
     this.isPlayMode = false;
+    this.temporarySwitcherByPageId = {};
+    this.temporaryOverflowVisibleContainerIdMap = {};
+    this.temporaryCopiedContainerPayload = null;
   }
 
   async requestInitializeSlides() {
@@ -673,6 +729,120 @@ class SlideContentStore {
     return containerData.containerSize ?? { pixelX: 0, pixelY: 0 };
   }
 
+  getTemporarySwitcher(pageId) {
+    if (!pageId) return null;
+    return this.temporarySwitcherByPageId[pageId] ?? null;
+  }
+
+  openTemporarySwitcher(pageId, anchorPoint = null) {
+    if (this.isPersisting) return { ok: false };
+    if (!pageId) return { ok: false };
+    const safeX = clamp(anchorPoint?.x ?? 0.2, 0, 1);
+    const safeY = clamp(anchorPoint?.y ?? 0.2, 0, 1);
+    this.temporarySwitcherByPageId[pageId] = {
+      id: generateTypedId('tmp-switcher'),
+      anchorPoint: { x: safeX, y: safeY },
+      text: '',
+    };
+    this.clearSelectedContainer();
+    this.clearSlideSurfaceSelected();
+    return { ok: true };
+  }
+
+  updateTemporarySwitcherText(pageId, text) {
+    const temporarySwitcher = this.getTemporarySwitcher(pageId);
+    if (!temporarySwitcher) return;
+    this.temporarySwitcherByPageId[pageId] = {
+      ...temporarySwitcher,
+      text: `${text ?? ''}`,
+    };
+  }
+
+  closeTemporarySwitcher(pageId) {
+    if (!pageId) return;
+    delete this.temporarySwitcherByPageId[pageId];
+  }
+
+  setContainerOverflowVisible(containerId, isVisible) {
+    if (!containerId) return;
+    if (isVisible) {
+      if (this.temporaryOverflowVisibleContainerIdMap[containerId] === true) return;
+      this.temporaryOverflowVisibleContainerIdMap = {
+        ...this.temporaryOverflowVisibleContainerIdMap,
+        [containerId]: true,
+      };
+      return;
+    }
+    if (this.temporaryOverflowVisibleContainerIdMap[containerId] !== true) return;
+    const nextMap = {
+      ...this.temporaryOverflowVisibleContainerIdMap,
+    };
+    delete nextMap[containerId];
+    this.temporaryOverflowVisibleContainerIdMap = nextMap;
+  }
+
+  getIsContainerOverflowVisible(containerId) {
+    if (!containerId) return false;
+    return this.temporaryOverflowVisibleContainerIdMap[containerId] === true;
+  }
+
+  getHasCopiedContainer() {
+    return Boolean(this.temporaryCopiedContainerPayload?.containerSnapshot);
+  }
+
+  requestCopyContainer(containerId) {
+    const containerData = this.getContainerData(containerId);
+    if (!containerData?.compId) return { ok: false };
+    const compData = this.getCompData(containerData.compId);
+    if (!compData) return { ok: false };
+    this.temporaryCopiedContainerPayload = {
+      sourceContainerId: containerId,
+      containerSnapshot: {
+        size: {
+          x: Number(containerData.size?.x ?? 0.28),
+          y: Number(containerData.size?.y ?? 0.22),
+        },
+        compId: containerData.compId,
+      },
+    };
+    return { ok: true };
+  }
+
+  requestPasteCopiedContainerToPage(targetPageId, anchorPoint = null) {
+    if (this.isPersisting) return { ok: false };
+    const copiedPayload = this.temporaryCopiedContainerPayload?.containerSnapshot;
+    if (!copiedPayload?.compId) return { ok: false };
+    const compData = this.getCompData(copiedPayload.compId);
+    if (!compData) return { ok: false };
+    const pageData = this.getPageData(targetPageId);
+    if (!pageData) return { ok: false };
+
+    const width = clamp(Number(copiedPayload.size?.x ?? 0.28), MIN_RATIO_SIZE, MAX_RATIO_SIZE);
+    const height = clamp(Number(copiedPayload.size?.y ?? 0.22), MIN_RATIO_SIZE, MAX_RATIO_SIZE);
+    const anchorX = Number.isFinite(anchorPoint?.x) ? anchorPoint.x : 0.5;
+    const anchorY = Number.isFinite(anchorPoint?.y) ? anchorPoint.y : 0.5;
+    const left = clamp(anchorX - width / 2, -MAX_RATIO_SIZE, MAX_RATIO_SIZE);
+    const top = clamp(anchorY - height / 2, -MAX_RATIO_SIZE, MAX_RATIO_SIZE);
+
+    const containerId = generateTypedId('ctr');
+    this.containerDataById[containerId] = {
+      id: containerId,
+      pos: { x: left, y: top },
+      size: { x: width, y: height },
+      compId: copiedPayload.compId,
+      layer: (pageData.containerIds ?? []).length,
+      containerSize: { pixelX: 0, pixelY: 0 },
+    };
+    this.pageDataById[targetPageId] = {
+      ...pageData,
+      containerIds: [...(pageData.containerIds ?? []), containerId],
+    };
+    this.containerPageIdByContainerId[containerId] = targetPageId;
+    this.markContainerDirty(containerId, 'created');
+    this.setSelectedContainer(containerId);
+    return { ok: true, containerId };
+  }
+
   setCurrentPage(pageId) {
     if (!this.pageDataById[pageId]) return;
     this.metadata.currentPageId = pageId;
@@ -763,6 +933,29 @@ class SlideContentStore {
     return this.requestMovePageToIndex(currentPageId, currentIndex + offset);
   }
 
+  requestCreatePageAfterCurrent() {
+    if (this.isPersisting) return { ok: false };
+    const currentPageId = this.metadata.currentPageId || '';
+    const currentPageIds = [...(this.metadata.pageIds ?? [])];
+    const currentPageIndex = currentPageIds.findIndex((pageId) => pageId === currentPageId);
+    const insertIndex = currentPageIndex >= 0 ? currentPageIndex + 1 : currentPageIds.length;
+    const nextPageId = generateTypedId('page');
+    this.pageDataById[nextPageId] = {
+      id: nextPageId,
+      containerIds: [],
+    };
+    currentPageIds.splice(insertIndex, 0, nextPageId);
+    this.metadata = {
+      ...this.metadata,
+      pageIds: currentPageIds,
+      currentPageId: nextPageId,
+    };
+    this.clearSelectedContainer();
+    this.clearSlideSurfaceSelected();
+    this.markMetadataDirty();
+    return { ok: true, pageId: nextPageId };
+  }
+
   setEditingComp(compId) {
     const compData = this.getCompData(compId);
     if (!compData) return;
@@ -777,7 +970,7 @@ class SlideContentStore {
     return this.editingCompId === compId;
   }
 
-  requestCreateContainerWithComp(compName, anchorPoint = null) {
+  requestCreateContainerWithComp(compName, anchorPoint = null, options = null) {
     if (this.isPersisting) return { ok: false };
     const pageId = this.metadata.currentPageId;
     const pageData = this.getPageData(pageId);
@@ -788,15 +981,31 @@ class SlideContentStore {
     const compId = generateTypedId('cmp');
     const anchorX = Number.isFinite(anchorPoint?.x) ? anchorPoint.x : 0.2;
     const anchorY = Number.isFinite(anchorPoint?.y) ? anchorPoint.y : 0.2;
-    const width = 0.28;
-    const height = 0.22;
-    const left = clamp(anchorX - width / 2, 0, 1 - width);
-    const top = clamp(anchorY - height / 2, 0, 1 - height);
+    const placement = options?.placement === 'top-left' ? 'top-left' : 'center';
+    const ratioByCompName = (() => {
+      if (compName === 'CompTextSingleline') return { width: 0.22, height: 0.06 };
+      if (compName === 'CompTextMultline') return { width: 0.28, height: 0.14 };
+      if (compName === 'CompCode') return { width: 0.46, height: 0.34 };
+      if (compName === 'CompExcalidraw') return { width: 0.5, height: 0.4 };
+      if (compName === 'CompIFrame') return { width: 0.34, height: 0.03 };
+      if (compName === 'CompUrl') return { width: 0.34, height: 0.03 };
+      return { width: 0.28, height: 0.22 };
+    })();
+    const width = ratioByCompName.width;
+    const height = ratioByCompName.height;
+    const left =
+      placement === 'top-left'
+        ? clamp(anchorX, -MAX_RATIO_SIZE, MAX_RATIO_SIZE)
+        : clamp(anchorX - width / 2, 0, 1 - width);
+    const top =
+      placement === 'top-left'
+        ? clamp(anchorY, -MAX_RATIO_SIZE, MAX_RATIO_SIZE)
+        : clamp(anchorY - height / 2, 0, 1 - height);
 
     this.compDataById[compId] = {
       id: compId,
       compName,
-      compData: this.createDefaultCompData(compName),
+      compData: options?.compData ?? this.createDefaultCompData(compName),
     };
     this.containerDataById[containerId] = {
       id: containerId,
@@ -818,6 +1027,22 @@ class SlideContentStore {
     return { ok: true, containerId, compId };
   }
 
+  confirmTemporarySwitcher(pageId, payload = null) {
+    const temporarySwitcher = this.getTemporarySwitcher(pageId);
+    if (!temporarySwitcher) return { ok: false };
+    const nextCompName = payload?.compName || 'CompTextSingleline';
+    const createResult = this.requestCreateContainerWithComp(
+      nextCompName,
+      temporarySwitcher.anchorPoint,
+      {
+        placement: 'top-left',
+        compData: payload?.compData ?? null,
+      },
+    );
+    this.closeTemporarySwitcher(pageId);
+    return createResult;
+  }
+
   requestDeleteContainer(containerId) {
     if (this.isPersisting) return { ok: false };
     const containerData = this.getContainerData(containerId);
@@ -829,6 +1054,7 @@ class SlideContentStore {
     const compId = containerData.compId ?? '';
     delete this.containerDataById[containerId];
     delete this.containerPageIdByContainerId[containerId];
+    this.setContainerOverflowVisible(containerId, false);
 
     this.pageDataById[pageId] = {
       ...pageData,
@@ -968,6 +1194,25 @@ class SlideContentStore {
     this.markCompDirtyByContainerId(containerId, 'updated');
   }
 
+  requestReplaceContainerComp(containerId, nextCompName, nextCompData = null) {
+    if (this.isPersisting) return { ok: false };
+    if (!this.getAvailableCompNames().includes(nextCompName)) return { ok: false };
+    const containerData = this.getContainerData(containerId);
+    if (!containerData) return { ok: false };
+    const compId = containerData.compId ?? '';
+    if (!compId) return { ok: false };
+    const currentCompData = this.getCompData(compId);
+    if (!currentCompData) return { ok: false };
+    this.compDataById[compId] = {
+      ...currentCompData,
+      compName: nextCompName,
+      compData: nextCompData ?? this.createDefaultCompData(nextCompName),
+    };
+    this.setContainerOverflowVisible(containerId, false);
+    this.markCompDirtyByContainerId(containerId, 'updated');
+    return { ok: true, compId };
+  }
+
   requestContainerFitToPixelSize(containerId, nextPixelSize) {
     if (this.isPersisting) return;
     const containerData = this.getContainerData(containerId);
@@ -1005,6 +1250,24 @@ class SlideContentStore {
       top: nextTop,
       width: nextRatioWidth,
       height: nextRatioHeight,
+    });
+  }
+
+  requestEnsureContainerMinPixelSize(containerId, minPixelSize) {
+    if (this.isPersisting) return;
+    const currentPixelSize = this.getContainerSize(containerId);
+    const nextPixelX = Math.max(
+      0,
+      Math.round(Math.max(currentPixelSize.pixelX, minPixelSize?.pixelX ?? 0)),
+    );
+    const nextPixelY = Math.max(
+      0,
+      Math.round(Math.max(currentPixelSize.pixelY, minPixelSize?.pixelY ?? 0)),
+    );
+    if (nextPixelX === currentPixelSize.pixelX && nextPixelY === currentPixelSize.pixelY) return;
+    this.requestContainerFitToPixelSize(containerId, {
+      pixelX: nextPixelX,
+      pixelY: nextPixelY,
     });
   }
 }

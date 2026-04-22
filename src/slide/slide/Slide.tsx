@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import Menu from '@wwf971/react-comp-misc/Menu';
-import CompContainer from './CompContainer';
-import { useSlideStore } from './contentStore';
-import SlideEdgeNavControls from './slide/SlideEdgeNavControls';
-import SlideFullWindowButton from './slide/SlideFullWindowButton';
+import CompContainer from '../CompContainer';
+import { useSlideStore } from '../contentStore';
+import CompSwitcher from '../comp/CompSwitcher';
+import SlideEdgeNavControls from './SlideEdgeNavControls';
+import SlideFullWindowButton from './SlideFullWindowButton';
 
 const SLIDE_HANDLE_DIRS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 
@@ -19,6 +20,7 @@ const Slide = observer(({
   isNextEnabled,
   onGoPrev,
   onGoNext,
+  onCreateNextPage,
   isFullWindow,
   onToggleFullWindow,
 }: any) => {
@@ -26,6 +28,7 @@ const Slide = observer(({
   const containers = store.getPageContainers(pageId);
   const pageAspectRatio = store.getPageAspectRatio();
   const slideSurfacePixelSize = store.getSlideSurfacePixelSize();
+  const isPasteEnabled = store.getHasCopiedContainer();
   const [menuState, setMenuState] = useState<any>(null);
   const isReadOnly = store.isPersisting;
   const slideSurfaceRef = useRef<any>(null);
@@ -50,10 +53,24 @@ const Slide = observer(({
     const safeSlidePixelWidth = Math.max(320, slidePixelWidth || 960);
     const slideUiBtnSize = clamp(safeSlidePixelWidth * 0.021, 16, 34);
     const slideUiFontSize = clamp(safeSlidePixelWidth * 0.0115, 10, 14);
+    const edgeNavBtnWidth = clamp(safeSlidePixelWidth * 0.035, 28, 60);
+    const edgeNavBtnHeight = Math.round(edgeNavBtnWidth * 1.5);
+    const edgeNavIconSize = clamp(edgeNavBtnWidth * 0.52, 14, 28);
+    const fullWindowBtnSize = clamp(safeSlidePixelWidth * 0.043, 30, 68);
+    const fullWindowIconSize = clamp(fullWindowBtnSize * 0.48, 14, 30);
+    const temporarySwitcherWidthRatio = 0.24;
+    const temporarySwitcherHeightRatio = 0.09;
     const nextStyle: any = {
       '--slide-page-aspect-ratio': `${pageAspectRatio}`,
       '--slide-ui-btn-size': `${slideUiBtnSize}px`,
       '--slide-ui-font-size': `${slideUiFontSize}px`,
+      '--slide-edge-nav-btn-width': `${edgeNavBtnWidth}px`,
+      '--slide-edge-nav-btn-height': `${edgeNavBtnHeight}px`,
+      '--slide-edge-nav-icon-size': `${edgeNavIconSize}px`,
+      '--slide-full-window-btn-size': `${fullWindowBtnSize}px`,
+      '--slide-full-window-icon-size': `${fullWindowIconSize}px`,
+      '--slide-temp-switcher-width-ratio': `${temporarySwitcherWidthRatio}`,
+      '--slide-temp-switcher-height-ratio': `${temporarySwitcherHeightRatio}`,
     };
     if (!isFullWindow && slideSurfacePixelSize.pixelX > 0 && slideSurfacePixelSize.pixelY > 0) {
       nextStyle.width = `${slideSurfacePixelSize.pixelX}px`;
@@ -82,8 +99,14 @@ const Slide = observer(({
         children: newChildren,
         disabled: isReadOnly,
       },
+      {
+        type: 'item' as const,
+        name: 'Paste',
+        data: { action: 'paste-container' },
+        disabled: isReadOnly || !isPasteEnabled,
+      },
     ];
-  }, [store, isReadOnly]);
+  }, [store, isReadOnly, isPasteEnabled]);
 
   const openContextMenu = (event) => {
     if (event.target !== event.currentTarget) return;
@@ -181,7 +204,7 @@ const Slide = observer(({
   };
 
   const requestCreateImageCompByPaste = async (file) => {
-    const createContainerResult = store.requestCreateContainerWithComp('CompImageExample', {
+    const createContainerResult = store.requestCreateContainerWithComp('CompImage', {
       x: 0.5,
       y: 0.5,
     });
@@ -205,7 +228,7 @@ const Slide = observer(({
   const requestCreateTextCompByPaste = (textValue) => {
     const trimmedText = `${textValue ?? ''}`;
     if (!trimmedText.trim()) return;
-    const createContainerResult = store.requestCreateContainerWithComp('CompTextMultiple', {
+    const createContainerResult = store.requestCreateContainerWithComp('CompTextMultline', {
       x: 0.5,
       y: 0.5,
     });
@@ -214,6 +237,22 @@ const Slide = observer(({
       text: trimmedText,
     });
   };
+
+  const requestCreateSwitcherCompByPoint = (event) => {
+    if (isReadOnly) return;
+    if (event.target !== event.currentTarget) return;
+    const pageRect = event.currentTarget.getBoundingClientRect();
+    const safeWidth = Math.max(pageRect?.width || 0, 1);
+    const safeHeight = Math.max(pageRect?.height || 0, 1);
+    const anchorX = Math.min(1, Math.max(0, (event.clientX - pageRect.left) / safeWidth));
+    const anchorY = Math.min(1, Math.max(0, (event.clientY - pageRect.top) / safeHeight));
+    store.openTemporarySwitcher(pageId, {
+      x: anchorX,
+      y: anchorY,
+    });
+  };
+
+  const temporarySwitcher = store.getTemporarySwitcher(pageId);
 
   return (
     <div ref={slideShellRef} className="slide-page-shell">
@@ -244,12 +283,14 @@ const Slide = observer(({
             requestCreateTextCompByPaste(pastedText);
           }}
           onContextMenu={openContextMenu}
+          onDoubleClick={requestCreateSwitcherCompByPoint}
         >
           <SlideEdgeNavControls
             isPrevEnabled={isPrevEnabled}
             isNextEnabled={isNextEnabled}
             onGoPrev={onGoPrev}
             onGoNext={onGoNext}
+            onCreateNextPage={onCreateNextPage}
           />
           <SlideFullWindowButton
             isFullWindow={isFullWindow}
@@ -272,6 +313,30 @@ const Slide = observer(({
               getComp={getComp}
             />
           ))}
+          {temporarySwitcher ? (
+            <div
+              className="slide-temp-switcher-wrap"
+              style={{
+                left: `${temporarySwitcher.anchorPoint.x * 100}%`,
+                top: `${temporarySwitcher.anchorPoint.y * 100}%`,
+              }}
+            >
+              <CompSwitcher
+                textValue={temporarySwitcher.text ?? ''}
+                availableCompNames={store.getAvailableCompNames()}
+                isReadOnly={isReadOnly}
+                onChangeText={(nextText) => {
+                  store.updateTemporarySwitcherText(pageId, nextText);
+                }}
+                onCancel={() => {
+                  store.closeTemporarySwitcher(pageId);
+                }}
+                onConfirm={(payload) => {
+                  store.confirmTemporarySwitcher(pageId, payload);
+                }}
+              />
+            </div>
+          ) : null}
           {menuState?.position && !isReadOnly ? (
             <Menu
               items={menuItems}
@@ -279,8 +344,12 @@ const Slide = observer(({
               onClose={() => setMenuState(null)}
               onContextMenu={openContextMenu}
               onItemClick={(item) => {
-                if (item?.data?.action !== 'new-comp') return;
-                store.requestCreateContainerWithComp(item.data.compName, menuState.anchorPoint);
+                if (item?.data?.action === 'new-comp') {
+                  store.requestCreateContainerWithComp(item.data.compName, menuState.anchorPoint);
+                }
+                if (item?.data?.action === 'paste-container') {
+                  store.requestPasteCopiedContainerToPage(pageId, menuState.anchorPoint);
+                }
               }}
             />
           ) : null}
