@@ -117,6 +117,26 @@ const isDirtyStateEmpty = (dirtyState: any) => {
   );
 };
 
+const isMetadataDirty = (dirtyPageStateById: any) => {
+  return Object.values(dirtyPageStateById ?? {}).some((dirtyState: any) => {
+    return Boolean(dirtyState?.updatedContainerIds?.__metadata__);
+  });
+};
+
+const sanitizeContainerDataForPersist = (containerData: any) => {
+  const nextContainerData = cloneData(containerData ?? {});
+  delete nextContainerData.containerSize;
+  return nextContainerData;
+};
+
+const sanitizeContainerDataMapForPersist = (containerDataById: any) => {
+  const output = {};
+  Object.entries(containerDataById ?? {}).forEach(([containerId, containerData]) => {
+    output[containerId] = sanitizeContainerDataForPersist(containerData);
+  });
+  return output;
+};
+
 class SlideContentPersistStore {
   persistedDataBySlideId = {};
 
@@ -332,6 +352,27 @@ class SlideContentPersistStore {
     return { ok: true };
   }
 
+  async dumpDatabaseSnapshot() {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/admin/dump-database`,
+      {
+        method: 'POST',
+      },
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return {
+        ok: false,
+        message: result.payload?.message ?? 'Failed to dump database',
+      };
+    }
+    return {
+      ok: true,
+      fileName: `${result.payload.fileName ?? ''}`,
+      filePath: `${result.payload.filePath ?? ''}`,
+      dumpedAt: `${result.payload.dumpedAt ?? ''}`,
+    };
+  }
+
   applyDirtyPagesToMemory(
     slideId: string,
     runtimeData: any,
@@ -339,10 +380,31 @@ class SlideContentPersistStore {
     dirtyPageIds: string[],
   ) {
     const persistedData = this.persistedDataBySlideId[slideId] ?? createDemoPersistData();
-    persistedData.metadata = cloneData(runtimeData?.metadata ?? {});
     const runtimePageDataById = runtimeData?.pageDataById ?? {};
     const runtimeContainerDataById = runtimeData?.containerDataById ?? {};
     const runtimeCompDataById = runtimeData?.compDataById ?? {};
+
+    if (isMetadataDirty(dirtyPageStateById)) {
+      persistedData.metadata = cloneData(runtimeData?.metadata ?? {});
+      const nextPageIds = persistedData.metadata?.pageIds ?? [];
+      const pageIdSet = new Set(nextPageIds);
+      Object.keys(persistedData.pageDataById ?? {}).forEach((pageId) => {
+        if (pageIdSet.has(pageId)) return;
+        delete persistedData.pageDataById[pageId];
+      });
+      nextPageIds.forEach((pageId) => {
+        const runtimePageData = runtimePageDataById[pageId];
+        if (runtimePageData) {
+          persistedData.pageDataById[pageId] = cloneData(runtimePageData);
+          return;
+        }
+        if (persistedData.pageDataById[pageId]) return;
+        persistedData.pageDataById[pageId] = {
+          id: pageId,
+          containerIds: [],
+        };
+      });
+    }
 
     dirtyPageIds.forEach((pageId) => {
       const dirtyState = dirtyPageStateById?.[pageId] ?? {};
@@ -352,14 +414,15 @@ class SlideContentPersistStore {
       persistedData.pageDataById[pageId] = cloneData(runtimePageData);
 
       collectDirtyIds(dirtyState.updatedContainerIds).forEach((containerId) => {
+        if (containerId === '__metadata__') return;
         const containerData = runtimeContainerDataById[containerId];
         if (!containerData) return;
-        persistedData.containerDataById[containerId] = cloneData(containerData);
+        persistedData.containerDataById[containerId] = sanitizeContainerDataForPersist(containerData);
       });
       collectDirtyIds(dirtyState.createdContainerIds).forEach((containerId) => {
         const containerData = runtimeContainerDataById[containerId];
         if (!containerData) return;
-        persistedData.containerDataById[containerId] = cloneData(containerData);
+        persistedData.containerDataById[containerId] = sanitizeContainerDataForPersist(containerData);
       });
       collectDirtyIds(dirtyState.deletedContainerIds).forEach((containerId) => {
         delete persistedData.containerDataById[containerId];
@@ -401,7 +464,9 @@ class SlideContentPersistStore {
         body: JSON.stringify({
           metadata: runtimeData?.metadata ?? {},
           pageDataById: runtimeData?.pageDataById ?? {},
-          containerDataById: runtimeData?.containerDataById ?? {},
+          containerDataById: sanitizeContainerDataMapForPersist(
+            runtimeData?.containerDataById ?? {},
+          ),
           compDataById: runtimeData?.compDataById ?? {},
           dirtyPageStateById: dirtyPageStateById ?? {},
         }),

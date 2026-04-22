@@ -16,7 +16,8 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   const saveTimerRef = useRef<any>(null);
   const lastSceneSnapshotRef = useRef('');
   const excalidrawApiRef = useRef<any>(null);
-  const prevContainerSizeRef = useRef<any>(null);
+  const viewportResizeBaseRef = useRef<any>(null);
+  const initialViewportMetaRef = useRef<any>(null);
   const lockedViewportRef = useRef<any>(null);
   const isApplyingLockedViewportRef = useRef(false);
   const prevIsPlayModeRef = useRef(false);
@@ -31,6 +32,28 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       zoomValue: appState?.zoom?.value ?? 1,
       scrollX: appState?.scrollX ?? 0,
       scrollY: appState?.scrollY ?? 0,
+    };
+  };
+
+  const setViewportResizeBase = (nextViewport = null) => {
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+    const nextPixelX = Number(containerSize?.pixelX ?? 0);
+    const nextPixelY = Number(containerSize?.pixelY ?? 0);
+    if (nextPixelX <= 0 || nextPixelY <= 0) return;
+    const appState = api.getAppState();
+    const nextZoomValue = Number(nextViewport?.zoomValue ?? appState?.zoom?.value ?? 1);
+    const nextScrollX = Number(nextViewport?.scrollX ?? appState?.scrollX ?? 0);
+    const nextScrollY = Number(nextViewport?.scrollY ?? appState?.scrollY ?? 0);
+    if (!Number.isFinite(nextZoomValue)) return;
+    if (!Number.isFinite(nextScrollX)) return;
+    if (!Number.isFinite(nextScrollY)) return;
+    viewportResizeBaseRef.current = {
+      zoomValue: nextZoomValue,
+      scrollX: nextScrollX,
+      scrollY: nextScrollY,
+      pixelX: nextPixelX,
+      pixelY: nextPixelY,
     };
   };
 
@@ -49,6 +72,20 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   const normalizeSceneData = (value) => {
     const scene = value && typeof value === 'object' ? { ...value } : {};
     const appStateRaw = scene.appState && typeof scene.appState === 'object' ? scene.appState : {};
+    const viewportMetaRaw =
+      scene.viewportMeta && typeof scene.viewportMeta === 'object' ? scene.viewportMeta : {};
+    const viewportPixelX = Number(viewportMetaRaw.pixelX);
+    const viewportPixelY = Number(viewportMetaRaw.pixelY);
+    const viewportMeta =
+      Number.isFinite(viewportPixelX) &&
+      viewportPixelX > 0 &&
+      Number.isFinite(viewportPixelY) &&
+      viewportPixelY > 0
+        ? {
+            pixelX: viewportPixelX,
+            pixelY: viewportPixelY,
+          }
+        : null;
     let collaborators = appStateRaw.collaborators;
     if (!(collaborators instanceof Map)) {
       if (Array.isArray(collaborators)) {
@@ -67,18 +104,42 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
         ...appStateRaw,
         collaborators,
       },
+      viewportMeta,
       sceneVersion,
     };
   };
 
   const toPersistSceneData = (value) => {
     const normalized = normalizeSceneData(value);
+    const zoomValue = Number(normalized.appState?.zoom?.value);
+    const scrollX = Number(normalized.appState?.scrollX);
+    const scrollY = Number(normalized.appState?.scrollY);
+    const viewportBasePixelX = Number(
+      viewportResizeBaseRef.current?.pixelX ?? containerSize?.pixelX ?? 0,
+    );
+    const viewportBasePixelY = Number(
+      viewportResizeBaseRef.current?.pixelY ?? containerSize?.pixelY ?? 0,
+    );
     return {
       elements: normalized.elements,
       files: normalized.files,
       appState: {
         viewBackgroundColor: normalized.appState?.viewBackgroundColor ?? '#ffffff',
+        ...(Number.isFinite(zoomValue) ? { zoom: { value: zoomValue } } : {}),
+        ...(Number.isFinite(scrollX) ? { scrollX } : {}),
+        ...(Number.isFinite(scrollY) ? { scrollY } : {}),
       },
+      ...(Number.isFinite(viewportBasePixelX) &&
+      viewportBasePixelX > 0 &&
+      Number.isFinite(viewportBasePixelY) &&
+      viewportBasePixelY > 0
+        ? {
+            viewportMeta: {
+              pixelX: viewportBasePixelX,
+              pixelY: viewportBasePixelY,
+            },
+          }
+        : {}),
       sceneVersion,
     };
   };
@@ -102,6 +163,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       if (!nextResourceId) {
         if (!isCancelled) {
           const defaultData = normalizeSceneData(defaultSceneData);
+          initialViewportMetaRef.current = defaultData.viewportMeta;
           setInitialData(defaultData);
           lastSceneSnapshotRef.current = JSON.stringify(toPersistSceneData(defaultData));
         }
@@ -111,6 +173,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       if (!loadResult?.ok) {
         if (!isCancelled) {
           const defaultData = normalizeSceneData(defaultSceneData);
+          initialViewportMetaRef.current = defaultData.viewportMeta;
           setInitialData(defaultData);
           lastSceneSnapshotRef.current = JSON.stringify(toPersistSceneData(defaultData));
           setErrorText('Failed to load scene resource');
@@ -121,6 +184,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       if (!text) {
         if (!isCancelled) {
           const defaultData = normalizeSceneData(defaultSceneData);
+          initialViewportMetaRef.current = defaultData.viewportMeta;
           setInitialData(defaultData);
           lastSceneSnapshotRef.current = JSON.stringify(toPersistSceneData(defaultData));
           setErrorText('');
@@ -131,6 +195,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
         const parsed = JSON.parse(text);
         if (!isCancelled) {
           const normalizedScene = normalizeSceneData(parsed);
+          initialViewportMetaRef.current = normalizedScene.viewportMeta;
           setInitialData(normalizedScene);
           lastSceneSnapshotRef.current = JSON.stringify(toPersistSceneData(normalizedScene));
           setErrorText('');
@@ -138,6 +203,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       } catch {
         if (!isCancelled) {
           const defaultData = normalizeSceneData(defaultSceneData);
+          initialViewportMetaRef.current = defaultData.viewportMeta;
           setInitialData(defaultData);
           lastSceneSnapshotRef.current = JSON.stringify(toPersistSceneData(defaultData));
           setErrorText('Scene data is invalid');
@@ -149,6 +215,11 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
       isCancelled = true;
     };
   }, [sceneResourceId, isReadOnly, store, containerId, defaultSceneData]);
+
+  useEffect(() => {
+    viewportResizeBaseRef.current = null;
+    initialViewportMetaRef.current = null;
+  }, [containerId, sceneResourceId]);
 
   useEffect(() => {
     return () => {
@@ -189,33 +260,24 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     const nextPixelX = containerSize.pixelX;
     const nextPixelY = containerSize.pixelY;
     if (nextPixelX <= 0 || nextPixelY <= 0) return;
-
-    const prevSize = prevContainerSizeRef.current;
-    if (!prevSize) {
-      prevContainerSizeRef.current = { pixelX: nextPixelX, pixelY: nextPixelY };
+    const resizeBase = viewportResizeBaseRef.current;
+    if (!resizeBase) {
+      setViewportResizeBase();
       return;
     }
-    if (prevSize.pixelX <= 0 || prevSize.pixelY <= 0) {
-      prevContainerSizeRef.current = { pixelX: nextPixelX, pixelY: nextPixelY };
+    if (resizeBase.pixelX <= 0 || resizeBase.pixelY <= 0) {
+      setViewportResizeBase();
       return;
     }
-    if (prevSize.pixelX === nextPixelX && prevSize.pixelY === nextPixelY) return;
+    if (resizeBase.pixelX === nextPixelX && resizeBase.pixelY === nextPixelY) return;
 
-    const ratioX = nextPixelX / prevSize.pixelX;
-    const ratioY = nextPixelY / prevSize.pixelY;
-    const resizeScale = Math.sqrt(ratioX * ratioY);
+    const resizeScale = nextPixelX / resizeBase.pixelX;
     if (!Number.isFinite(resizeScale) || resizeScale <= 0) {
-      prevContainerSizeRef.current = { pixelX: nextPixelX, pixelY: nextPixelY };
       return;
     }
-
-    const appState = api.getAppState();
-    const currentZoom = appState?.zoom?.value ?? 1;
-    const nextZoom = Math.max(0.1, Math.min(8, currentZoom * resizeScale));
-    const currentScrollX = appState?.scrollX ?? 0;
-    const currentScrollY = appState?.scrollY ?? 0;
-    const nextScrollX = currentScrollX * resizeScale;
-    const nextScrollY = currentScrollY * resizeScale;
+    const nextZoom = Math.max(0.1, Math.min(8, resizeBase.zoomValue * resizeScale));
+    const nextScrollX = resizeBase.scrollX * resizeScale;
+    const nextScrollY = resizeBase.scrollY * resizeScale;
     if (!isPanEnabled || !isZoomEnabled) {
       lockedViewportRef.current = {
         zoomValue: nextZoom,
@@ -234,8 +296,19 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     requestAnimationFrame(() => {
       isApplyingLockedViewportRef.current = false;
     });
-    prevContainerSizeRef.current = { pixelX: nextPixelX, pixelY: nextPixelY };
-  }, [containerSize.pixelX, containerSize.pixelY, isPanEnabled, isZoomEnabled]);
+    store.setExcalidrawViewport(containerId, {
+      zoomValue: nextZoom,
+      scrollX: nextScrollX,
+      scrollY: nextScrollY,
+    });
+    viewportResizeBaseRef.current = {
+      zoomValue: nextZoom,
+      scrollX: nextScrollX,
+      scrollY: nextScrollY,
+      pixelX: nextPixelX,
+      pixelY: nextPixelY,
+    };
+  }, [containerSize.pixelX, containerSize.pixelY, isPanEnabled, isZoomEnabled, store, containerId]);
 
   const queueSaveScene = (sceneData) => {
     if (!sceneResourceId) return;
@@ -277,12 +350,88 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
         viewModeEnabled={isReadOnly || !isEditEnabled}
         excalidrawAPI={(api) => {
           excalidrawApiRef.current = api;
-          prevContainerSizeRef.current =
-            containerSize.pixelX > 0 && containerSize.pixelY > 0
-              ? { pixelX: containerSize.pixelX, pixelY: containerSize.pixelY }
-              : null;
+          const cachedViewport = store.getExcalidrawViewport(containerId);
+          if (cachedViewport) {
+            isApplyingLockedViewportRef.current = true;
+            api.updateScene({
+              appState: {
+                zoom: { value: cachedViewport.zoomValue },
+                scrollX: cachedViewport.scrollX,
+                scrollY: cachedViewport.scrollY,
+              },
+            });
+            requestAnimationFrame(() => {
+              isApplyingLockedViewportRef.current = false;
+            });
+            if (!isPanEnabled || !isZoomEnabled) {
+              lockedViewportRef.current = {
+                zoomValue: cachedViewport.zoomValue,
+                scrollX: cachedViewport.scrollX,
+                scrollY: cachedViewport.scrollY,
+              };
+            }
+            setViewportResizeBase(cachedViewport);
+            return;
+          }
+          const initialViewportMeta = initialViewportMetaRef.current;
+          const hasInitialViewportMeta =
+            Number.isFinite(Number(initialViewportMeta?.pixelX)) &&
+            Number(initialViewportMeta.pixelX) > 0 &&
+            Number.isFinite(Number(initialViewportMeta?.pixelY)) &&
+            Number(initialViewportMeta.pixelY) > 0 &&
+            Number.isFinite(Number(containerSize?.pixelX)) &&
+            Number(containerSize.pixelX) > 0 &&
+            Number.isFinite(Number(containerSize?.pixelY)) &&
+            Number(containerSize.pixelY) > 0;
+          if (hasInitialViewportMeta) {
+            const appState = api.getAppState();
+            const initialZoomValue = Number(appState?.zoom?.value ?? 1);
+            const initialScrollX = Number(appState?.scrollX ?? 0);
+            const initialScrollY = Number(appState?.scrollY ?? 0);
+            const ratioX = Number(containerSize.pixelX) / Number(initialViewportMeta.pixelX);
+            const ratioY = Number(containerSize.pixelY) / Number(initialViewportMeta.pixelY);
+            const resizeScale = Math.sqrt(ratioX * ratioY);
+            if (
+              Number.isFinite(initialZoomValue) &&
+              Number.isFinite(initialScrollX) &&
+              Number.isFinite(initialScrollY) &&
+              Number.isFinite(resizeScale) &&
+              resizeScale > 0 &&
+              Math.abs(resizeScale - 1) > 0.0001
+            ) {
+              const nextZoomValue = Math.max(0.1, Math.min(8, initialZoomValue * resizeScale));
+              const nextScrollX = initialScrollX * resizeScale;
+              const nextScrollY = initialScrollY * resizeScale;
+              isApplyingLockedViewportRef.current = true;
+              api.updateScene({
+                appState: {
+                  zoom: { value: nextZoomValue as any },
+                  scrollX: nextScrollX,
+                  scrollY: nextScrollY,
+                },
+              });
+              requestAnimationFrame(() => {
+                isApplyingLockedViewportRef.current = false;
+              });
+              store.setExcalidrawViewport(containerId, {
+                zoomValue: nextZoomValue,
+                scrollX: nextScrollX,
+                scrollY: nextScrollY,
+              });
+              setViewportResizeBase({
+                zoomValue: nextZoomValue,
+                scrollX: nextScrollX,
+                scrollY: nextScrollY,
+              });
+              return;
+            }
+          }
+          setViewportResizeBase();
         }}
         onChange={(elements, appState, files) => {
+          let nextViewportZoomValue = appState?.zoom?.value ?? 1;
+          let nextViewportScrollX = appState?.scrollX ?? 0;
+          let nextViewportScrollY = appState?.scrollY ?? 0;
           if (
             (!isPanEnabled || !isZoomEnabled) &&
             lockedViewportRef.current &&
@@ -302,6 +451,9 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
               const targetZoomValue = isZoomEnabled ? nextZoomValue : lockedViewport.zoomValue;
               const targetScrollX = isPanEnabled ? nextScrollX : lockedViewport.scrollX;
               const targetScrollY = isPanEnabled ? nextScrollY : lockedViewport.scrollY;
+              nextViewportZoomValue = targetZoomValue;
+              nextViewportScrollX = targetScrollX;
+              nextViewportScrollY = targetScrollY;
               excalidrawApiRef.current.updateScene({
                 appState: {
                   zoom: { value: targetZoomValue },
@@ -313,6 +465,28 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
                 isApplyingLockedViewportRef.current = false;
               });
             }
+          }
+          store.setExcalidrawViewport(containerId, {
+            zoomValue: nextViewportZoomValue,
+            scrollX: nextViewportScrollX,
+            scrollY: nextViewportScrollY,
+          });
+          const resizeBase = viewportResizeBaseRef.current;
+          const isViewportBaseMissing = !resizeBase;
+          const isViewportChangedFromBase =
+            !isViewportBaseMissing &&
+            (Math.abs(nextViewportZoomValue - Number(resizeBase.zoomValue ?? 1)) > 0.0001 ||
+              Math.abs(nextViewportScrollX - Number(resizeBase.scrollX ?? 0)) > 0.1 ||
+              Math.abs(nextViewportScrollY - Number(resizeBase.scrollY ?? 0)) > 0.1);
+          if (
+            !isApplyingLockedViewportRef.current &&
+            (isViewportBaseMissing || isViewportChangedFromBase)
+          ) {
+            setViewportResizeBase({
+              zoomValue: nextViewportZoomValue,
+              scrollX: nextViewportScrollX,
+              scrollY: nextViewportScrollY,
+            });
           }
           if (isReadOnly) return;
           queueSaveScene({

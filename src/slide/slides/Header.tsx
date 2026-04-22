@@ -14,13 +14,20 @@ const Header = ({
   persistFailureMessage,
   hasPrevPage,
   hasNextPage,
+  hasMovePrevPage,
+  hasMoveNextPage,
   onSwitchSlide,
   onRenameSlide,
   onCreateSlide,
   onDeleteSlide,
   onReinitDatabase,
+  onDumpDatabase,
+  onCreatePageBefore,
+  onCreatePageAfter,
   onGoPrevPage,
   onGoNextPage,
+  onMovePrevPage,
+  onMoveNextPage,
 }: any) => {
   const LeftIco = LeftIcon as any;
   const RightIco = RightIcon as any;
@@ -177,6 +184,16 @@ const Header = ({
         >
           Reinit DB
         </button>
+        <button
+          className="slide-toolbar-btn"
+          type="button"
+          disabled={isSettingBusy}
+          onClick={() => {
+            onDumpDatabase?.();
+          }}
+        >
+          Dump DB
+        </button>
       </div>
       <div className="slide-toolbar-page">
         <span className="slide-toolbar-page-value">{currentPageIndex}</span>
@@ -187,6 +204,38 @@ const Header = ({
         <span className="slide-toolbar-save-fail">{persistFailureMessage}</span>
       </div>
       <div className="slide-toolbar-page-nav">
+        <button
+          className="slide-toolbar-btn"
+          type="button"
+          disabled={isSettingBusy || isPersisting}
+          onClick={() => onCreatePageBefore?.()}
+        >
+          Create Before
+        </button>
+        <button
+          className="slide-toolbar-btn"
+          type="button"
+          disabled={isSettingBusy || isPersisting}
+          onClick={() => onCreatePageAfter?.()}
+        >
+          Create After
+        </button>
+        <button
+          className="slide-toolbar-btn"
+          type="button"
+          disabled={isSettingBusy || isPersisting || !hasMovePrevPage}
+          onClick={() => onMovePrevPage?.()}
+        >
+          Move Prev
+        </button>
+        <button
+          className="slide-toolbar-btn"
+          type="button"
+          disabled={isSettingBusy || isPersisting || !hasMoveNextPage}
+          onClick={() => onMoveNextPage?.()}
+        >
+          Move Next
+        </button>
         <button
           className="slide-toolbar-icon-btn"
           type="button"

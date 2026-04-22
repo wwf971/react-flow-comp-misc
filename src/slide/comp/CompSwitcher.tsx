@@ -1,11 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 
-const SWITCHER_FILTER_REGEX = /^\/[0-9a-zA-Z_-]*$/;
+const parseSlashInput = (textValue) => {
+  const safeTextValue = `${textValue ?? ''}`;
+  const trimmedStartText = safeTextValue.trimStart();
+  if (!trimmedStartText.startsWith('/')) {
+    return {
+      isSlashMode: false,
+      keyword: '',
+      command: '',
+    };
+  }
+  const slashBody = trimmedStartText.slice(1);
+  const firstSpaceIndex = slashBody.search(/\s/);
+  const command =
+    firstSpaceIndex < 0 ? slashBody.toLowerCase() : slashBody.slice(0, firstSpaceIndex).toLowerCase();
+  return {
+    isSlashMode: true,
+    keyword: command,
+    command,
+  };
+};
 
 const CompSwitcher = observer(({
   textValue,
   availableCompNames,
+  availableCompScripts,
   isReadOnly,
   onChangeText,
   onCancel,
@@ -24,28 +44,46 @@ const CompSwitcher = observer(({
     element.setSelectionRange?.(textLength, textLength);
   }, []);
 
-  const queryInfo = useMemo(() => {
-    const isSlashMode = SWITCHER_FILTER_REGEX.test(safeTextValue);
-    if (!isSlashMode) return { isSlashMode: false, keyword: '' };
-    const keyword = safeTextValue.startsWith('/') ? safeTextValue.slice(1).toLowerCase() : '';
-    return { isSlashMode: true, keyword };
-  }, [safeTextValue]);
+  const queryInfo = useMemo(() => parseSlashInput(safeTextValue), [safeTextValue]);
 
   const options = useMemo(() => {
     if (!queryInfo.isSlashMode) return [];
-    return availableCompNames
-      .map((compName) => {
+    const compOptions = availableCompNames.map((compName) => {
         const optionName = compName.replace(/^Comp/, '');
         const optionNameLower = optionName.toLowerCase();
         const matchStart = queryInfo.keyword ? optionNameLower.indexOf(queryInfo.keyword) : -1;
         const matchLength = queryInfo.keyword ? queryInfo.keyword.length : 0;
-        return { compName, optionName, matchStart, matchLength };
-      })
-      .filter((option) => {
+        return {
+          optionType: 'comp',
+          compName,
+          optionName,
+          optionNameLower,
+          matchStart,
+          matchLength,
+        };
+      });
+    const compScriptOptions = (availableCompScripts ?? []).map((compScript) => {
+      const command = `${compScript?.command ?? ''}`.toLowerCase();
+      const optionName = `/${command}`;
+      const optionNameLower = optionName.toLowerCase();
+      const keywordWithSlash = queryInfo.keyword ? `/${queryInfo.keyword}` : '';
+      const matchStart = keywordWithSlash ? optionNameLower.indexOf(keywordWithSlash) : -1;
+      const matchLength = keywordWithSlash ? keywordWithSlash.length : 0;
+      return {
+        optionType: 'script',
+        scriptCommand: command,
+        optionName,
+        optionNameLower,
+        description: `${compScript?.description ?? ''}`,
+        matchStart,
+        matchLength,
+      };
+    });
+    return [...compScriptOptions, ...compOptions].filter((option) => {
         if (!queryInfo.keyword) return true;
         return option.matchStart >= 0;
       });
-  }, [availableCompNames, queryInfo.isSlashMode, queryInfo.keyword]);
+  }, [availableCompNames, availableCompScripts, queryInfo.isSlashMode, queryInfo.keyword]);
 
   useEffect(() => {
     const optionCount = options.length;
@@ -81,10 +119,27 @@ const CompSwitcher = observer(({
     });
   };
 
+  const requestConfirmCompScript = () => {
+    onConfirm?.({
+      compScriptInput: safeTextValue,
+    });
+  };
+
   const requestBecomeSelectedOption = () => {
     const selectedOption = options[selectedOptionIndex];
     if (!selectedOption) {
+      const hasMatchingScript = (availableCompScripts ?? []).some((compScript) => {
+        return `${compScript?.command ?? ''}`.toLowerCase() === queryInfo.command;
+      });
+      if (queryInfo.isSlashMode && hasMatchingScript) {
+        requestConfirmCompScript();
+        return;
+      }
       requestConfirmTextSingleline();
+      return;
+    }
+    if (selectedOption.optionType === 'script') {
+      requestConfirmCompScript();
       return;
     }
     onConfirm?.({
@@ -122,6 +177,13 @@ const CompSwitcher = observer(({
           if (isReadOnly) return;
           if (!safeTextValue.trim()) {
             onCancel?.();
+            return;
+          }
+          const hasMatchingScript = (availableCompScripts ?? []).some((compScript) => {
+            return `${compScript?.command ?? ''}`.toLowerCase() === queryInfo.command;
+          });
+          if (queryInfo.isSlashMode && hasMatchingScript) {
+            requestConfirmCompScript();
             return;
           }
           requestConfirmTextSingleline();
@@ -165,16 +227,23 @@ const CompSwitcher = observer(({
           {options.length > 0 ? (
             options.map((option, optionIndex) => (
               <button
-                key={option.compName}
+                key={option.optionType === 'script' ? option.scriptCommand : option.compName}
                 className={`slide-switcher-option ${optionIndex === selectedOptionIndex ? 'is-selected' : ''}`}
                 type="button"
                 onMouseDown={(event) => {
                   event.preventDefault();
                   setSelectedOptionIndex(optionIndex);
+                  if (option.optionType === 'script') {
+                    requestConfirmCompScript();
+                    return;
+                  }
                   onConfirm?.({ compName: option.compName });
                 }}
               >
-                {renderOptionLabel(option)}
+                <div className="slide-switcher-option-name">{renderOptionLabel(option)}</div>
+                {option.optionType === 'script' && option.description ? (
+                  <div className="slide-switcher-option-desc">{option.description}</div>
+                ) : null}
               </button>
             ))
           ) : (

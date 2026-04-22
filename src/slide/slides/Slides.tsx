@@ -64,6 +64,10 @@ const Slides = observer(({ store, getComp }: any) => {
     };
   }, [isFullWindow]);
 
+  useEffect(() => {
+    store.setIsFullWindowMode(isFullWindow);
+  }, [store, isFullWindow]);
+
   const prevPage = store.getPrevPageData(currentPageId);
   const nextPage = store.getNextPageData(currentPageId);
 
@@ -83,6 +87,8 @@ const Slides = observer(({ store, getComp }: any) => {
           persistFailureMessage={persistFailureMessage}
           hasPrevPage={Boolean(prevPage)}
           hasNextPage={Boolean(nextPage)}
+          hasMovePrevPage={currentPageIndex > 1}
+          hasMoveNextPage={currentPageIndex > 0 && currentPageIndex < totalPage}
           onSwitchSlide={(slideId) => {
             store.requestSwitchSlide(slideId);
           }}
@@ -98,6 +104,15 @@ const Slides = observer(({ store, getComp }: any) => {
           onReinitDatabase={() => {
             store.requestReinitDatabase();
           }}
+          onDumpDatabase={() => {
+            store.requestDumpDatabaseSnapshot();
+          }}
+          onCreatePageBefore={() => {
+            store.requestCreatePageBeforeCurrent();
+          }}
+          onCreatePageAfter={() => {
+            store.requestCreatePageAfterCurrent();
+          }}
           onGoPrevPage={() => {
             if (!prevPage) return;
             store.setCurrentPage(prevPage.id);
@@ -107,6 +122,12 @@ const Slides = observer(({ store, getComp }: any) => {
             if (!nextPage) return;
             store.setCurrentPage(nextPage.id);
             store.clearSelectedContainer();
+          }}
+          onMovePrevPage={() => {
+            store.requestMoveCurrentPageByOffset(-1);
+          }}
+          onMoveNextPage={() => {
+            store.requestMoveCurrentPageByOffset(1);
           }}
         />
         <div className="slide-system-canvas-wrap">

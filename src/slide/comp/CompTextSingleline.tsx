@@ -26,10 +26,7 @@ const CompTextSingleline = observer(
         : pagePixelWidthByContainer > 0
           ? pagePixelWidthByContainer
           : 900;
-    const fontPixelSize = Math.min(
-      48,
-      Math.max(10, (safePagePixelWidth * Math.max(fontScale, 0.4)) / 100),
-    );
+    const fontPixelSize = Math.max(10, (safePagePixelWidth * Math.max(fontScale, 0.4)) / 100);
 
     useEffect(() => {
       const rootElement = rootRef.current;
@@ -63,8 +60,8 @@ const CompTextSingleline = observer(
       const currentContainerSize = store.getContainerSize(containerId);
       const initialPixelX = data?.initialPixelSize?.pixelX ?? 0;
       const initialPixelY = data?.initialPixelSize?.pixelY ?? 0;
-      const nextPixelX = Math.max(measuredPixelX, initialPixelX);
-      const nextPixelY = Math.max(measuredPixelY, initialPixelY);
+      const nextPixelX = Math.max(measuredPixelX, initialPixelX, currentContainerSize.pixelX);
+      const nextPixelY = Math.max(measuredPixelY, initialPixelY, currentContainerSize.pixelY);
       if (
         nextPixelX === currentContainerSize.pixelX &&
         nextPixelY === currentContainerSize.pixelY
@@ -82,6 +79,8 @@ const CompTextSingleline = observer(
     }, [
       textValue,
       fontPixelSize,
+      containerSize.pixelX,
+      containerSize.pixelY,
       data?.initialPixelSize?.pixelX,
       data?.initialPixelSize?.pixelY,
     ]);

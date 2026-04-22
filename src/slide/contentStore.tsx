@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import { makeAutoObservable, runInAction } from 'mobx';
 import { createDemoPersistStore } from './contentPersistStore';
+import { getAvailableCompScripts, resolveCompScriptPayload } from './compScript';
 
 const MIN_RATIO_SIZE = 0.03;
 const MAX_RATIO_SIZE = 4;
@@ -58,6 +59,20 @@ const buildContainerPageMap = (pageDataById) => {
   return output;
 };
 
+const toRuntimeContainerDataMap = (containerDataById) => {
+  const output = {};
+  Object.entries(containerDataById ?? {}).forEach(([containerId, containerData]: any) => {
+    output[containerId] = {
+      ...(containerData ?? {}),
+      containerSize: {
+        pixelX: 0,
+        pixelY: 0,
+      },
+    };
+  });
+  return output;
+};
+
 const toSafeLayer = (value, fallback) => {
   if (Number.isFinite(value)) return Math.max(0, Math.floor(value));
   return fallback;
@@ -104,6 +119,8 @@ class SlideContentStore {
 
   isPlayMode = false;
 
+  isFullWindowMode = false;
+
   persistStore = null;
 
   slideItems = [{ id: 'local-demo', name: 'Local Demo' }];
@@ -128,6 +145,8 @@ class SlideContentStore {
 
   temporaryCopiedContainerPayload = null;
 
+  temporaryExcalidrawViewportByContainerId = {};
+
   constructor(seedData: any, persistStore: any = null) {
     this.persistStore = persistStore;
     this.metadata = {
@@ -139,17 +158,7 @@ class SlideContentStore {
       this.pageDataById[pageId] = { ...pageData };
     });
 
-    Object.entries(seedData.containerDataById ?? {}).forEach(
-      ([containerId, containerData]: any) => {
-        this.containerDataById[containerId] = {
-          ...containerData,
-          containerSize: {
-            pixelX: containerData.containerSize?.pixelX ?? 0,
-            pixelY: containerData.containerSize?.pixelY ?? 0,
-          },
-        };
-      },
-    );
+    this.containerDataById = toRuntimeContainerDataMap(seedData.containerDataById ?? {});
 
     Object.entries(seedData.compDataById ?? {}).forEach(([compId, compEntry]: any) => {
       this.compDataById[compId] = {
@@ -177,6 +186,10 @@ class SlideContentStore {
       'CompIFrame',
       'CompUrl',
     ];
+  }
+
+  getAvailableCompScripts() {
+    return getAvailableCompScripts();
   }
 
   createDefaultCompData(compName) {
@@ -252,7 +265,7 @@ class SlideContentStore {
       ...(snapshot?.metadata ?? {}),
     };
     this.pageDataById = cloneData(snapshot?.pageDataById ?? {});
-    this.containerDataById = cloneData(snapshot?.containerDataById ?? {});
+    this.containerDataById = toRuntimeContainerDataMap(snapshot?.containerDataById ?? {});
     this.compDataById = cloneData(snapshot?.compDataById ?? {});
     this.containerPageIdByContainerId = buildContainerPageMap(this.pageDataById);
     this.normalizeAllContainerLayers();
@@ -269,6 +282,7 @@ class SlideContentStore {
     this.temporarySwitcherByPageId = {};
     this.temporaryOverflowVisibleContainerIdMap = {};
     this.temporaryCopiedContainerPayload = null;
+    this.temporaryExcalidrawViewportByContainerId = {};
   }
 
   async requestInitializeSlides() {
@@ -310,6 +324,12 @@ class SlideContentStore {
   async requestSwitchSlide(slideId) {
     if (!slideId || this.currentSlideId === slideId) return;
     if (this.isPersisting || this.isSlideSwitching) return;
+    if (this.hasDirtyPages()) {
+      const saveResult = await this.requestPersistDirtyPages();
+      if (!saveResult?.ok) {
+        return { ok: false };
+      }
+    }
     runInAction(() => {
       this.isSlideSwitching = true;
     });
@@ -331,6 +351,7 @@ class SlideContentStore {
         this.isSlideSwitching = false;
       });
     }
+    return { ok: true };
   }
 
   async requestCreateSlide(name) {
@@ -530,6 +551,21 @@ class SlideContentStore {
       this.persistFailureMessage = '';
     });
     return { ok: true };
+  }
+
+  async requestDumpDatabaseSnapshot() {
+    if (!this.persistStore?.dumpDatabaseSnapshot) return { ok: false };
+    const result = await this.persistStore.dumpDatabaseSnapshot();
+    if (!result?.ok) {
+      runInAction(() => {
+        this.persistFailureMessage = result?.message ?? 'Failed to dump database';
+      });
+      return { ok: false };
+    }
+    runInAction(() => {
+      this.persistFailureMessage = '';
+    });
+    return result;
   }
 
   ensurePageDirtyState(pageId) {
@@ -790,6 +826,29 @@ class SlideContentStore {
     return Boolean(this.temporaryCopiedContainerPayload?.containerSnapshot);
   }
 
+  getExcalidrawViewport(containerId) {
+    if (!containerId) return null;
+    return this.temporaryExcalidrawViewportByContainerId[containerId] ?? null;
+  }
+
+  setExcalidrawViewport(containerId, nextViewport) {
+    if (!containerId) return;
+    const nextZoomValue = Number(nextViewport?.zoomValue);
+    const nextScrollX = Number(nextViewport?.scrollX);
+    const nextScrollY = Number(nextViewport?.scrollY);
+    if (!Number.isFinite(nextZoomValue)) return;
+    if (!Number.isFinite(nextScrollX)) return;
+    if (!Number.isFinite(nextScrollY)) return;
+    this.temporaryExcalidrawViewportByContainerId = {
+      ...this.temporaryExcalidrawViewportByContainerId,
+      [containerId]: {
+        zoomValue: nextZoomValue,
+        scrollX: nextScrollX,
+        scrollY: nextScrollY,
+      },
+    };
+  }
+
   requestCopyContainer(containerId) {
     const containerData = this.getContainerData(containerId);
     if (!containerData?.compId) return { ok: false };
@@ -889,6 +948,14 @@ class SlideContentStore {
     this.isPlayMode = !this.isPlayMode;
   }
 
+  getIsFullWindowMode() {
+    return this.isFullWindowMode === true;
+  }
+
+  setIsFullWindowMode(isFullWindowMode) {
+    this.isFullWindowMode = isFullWindowMode === true;
+  }
+
   getSlideSurfacePixelSize() {
     return this.slideSurfacePixelSize ?? { pixelX: 0, pixelY: 0 };
   }
@@ -956,6 +1023,29 @@ class SlideContentStore {
     return { ok: true, pageId: nextPageId };
   }
 
+  requestCreatePageBeforeCurrent() {
+    if (this.isPersisting) return { ok: false };
+    const currentPageId = this.metadata.currentPageId || '';
+    const currentPageIds = [...(this.metadata.pageIds ?? [])];
+    const currentPageIndex = currentPageIds.findIndex((pageId) => pageId === currentPageId);
+    const insertIndex = currentPageIndex >= 0 ? currentPageIndex : currentPageIds.length;
+    const nextPageId = generateTypedId('page');
+    this.pageDataById[nextPageId] = {
+      id: nextPageId,
+      containerIds: [],
+    };
+    currentPageIds.splice(insertIndex, 0, nextPageId);
+    this.metadata = {
+      ...this.metadata,
+      pageIds: currentPageIds,
+      currentPageId: nextPageId,
+    };
+    this.clearSelectedContainer();
+    this.clearSlideSurfaceSelected();
+    this.markMetadataDirty();
+    return { ok: true, pageId: nextPageId };
+  }
+
   setEditingComp(compId) {
     const compData = this.getCompData(compId);
     if (!compData) return;
@@ -991,14 +1081,26 @@ class SlideContentStore {
       if (compName === 'CompUrl') return { width: 0.34, height: 0.03 };
       return { width: 0.28, height: 0.22 };
     })();
-    const width = ratioByCompName.width;
-    const height = ratioByCompName.height;
-    const left =
-      placement === 'top-left'
+    const inputRectRatio = options?.rectRatio ?? null;
+    const hasCustomRectRatio =
+      Number.isFinite(inputRectRatio?.left) &&
+      Number.isFinite(inputRectRatio?.top) &&
+      Number.isFinite(inputRectRatio?.width) &&
+      Number.isFinite(inputRectRatio?.height);
+    const width = hasCustomRectRatio
+      ? clamp(Number(inputRectRatio.width), MIN_RATIO_SIZE, MAX_RATIO_SIZE)
+      : ratioByCompName.width;
+    const height = hasCustomRectRatio
+      ? clamp(Number(inputRectRatio.height), MIN_RATIO_SIZE, MAX_RATIO_SIZE)
+      : ratioByCompName.height;
+    const left = hasCustomRectRatio
+      ? clamp(Number(inputRectRatio.left), -MAX_RATIO_SIZE, MAX_RATIO_SIZE)
+      : placement === 'top-left'
         ? clamp(anchorX, -MAX_RATIO_SIZE, MAX_RATIO_SIZE)
         : clamp(anchorX - width / 2, 0, 1 - width);
-    const top =
-      placement === 'top-left'
+    const top = hasCustomRectRatio
+      ? clamp(Number(inputRectRatio.top), -MAX_RATIO_SIZE, MAX_RATIO_SIZE)
+      : placement === 'top-left'
         ? clamp(anchorY, -MAX_RATIO_SIZE, MAX_RATIO_SIZE)
         : clamp(anchorY - height / 2, 0, 1 - height);
 
@@ -1030,13 +1132,21 @@ class SlideContentStore {
   confirmTemporarySwitcher(pageId, payload = null) {
     const temporarySwitcher = this.getTemporarySwitcher(pageId);
     if (!temporarySwitcher) return { ok: false };
-    const nextCompName = payload?.compName || 'CompTextSingleline';
+    let nextPayload = payload;
+    if (payload?.compScriptInput) {
+      const matchedScriptPayload = resolveCompScriptPayload(payload.compScriptInput);
+      if (matchedScriptPayload) {
+        nextPayload = matchedScriptPayload;
+      }
+    }
+    const nextCompName = nextPayload?.compName || 'CompTextSingleline';
     const createResult = this.requestCreateContainerWithComp(
       nextCompName,
       temporarySwitcher.anchorPoint,
       {
-        placement: 'top-left',
-        compData: payload?.compData ?? null,
+        placement: nextPayload?.options?.placement ?? 'top-left',
+        rectRatio: nextPayload?.options?.rectRatio ?? null,
+        compData: nextPayload?.compData ?? null,
       },
     );
     this.closeTemporarySwitcher(pageId);
@@ -1215,6 +1325,7 @@ class SlideContentStore {
 
   requestContainerFitToPixelSize(containerId, nextPixelSize) {
     if (this.isPersisting) return;
+    if (this.isFullWindowMode) return;
     const containerData = this.getContainerData(containerId);
     if (!containerData) return;
     const currentPixelSize = this.getContainerSize(containerId);
@@ -1255,6 +1366,7 @@ class SlideContentStore {
 
   requestEnsureContainerMinPixelSize(containerId, minPixelSize) {
     if (this.isPersisting) return;
+    if (this.isFullWindowMode) return;
     const currentPixelSize = this.getContainerSize(containerId);
     const nextPixelX = Math.max(
       0,

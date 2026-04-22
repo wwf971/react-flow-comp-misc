@@ -58,6 +58,10 @@ const Slide = observer(({
     const edgeNavIconSize = clamp(edgeNavBtnWidth * 0.52, 14, 28);
     const fullWindowBtnSize = clamp(safeSlidePixelWidth * 0.043, 30, 68);
     const fullWindowIconSize = clamp(fullWindowBtnSize * 0.48, 14, 30);
+    const switcherFontSize = clamp(safeSlidePixelWidth * 0.012, 11, 20);
+    const switcherDescFontSize = clamp(safeSlidePixelWidth * 0.0105, 10, 17);
+    const switcherInputHeight = clamp(safeSlidePixelWidth * 0.028, 24, 44);
+    const switcherOptionHeight = clamp(safeSlidePixelWidth * 0.023, 20, 36);
     const temporarySwitcherWidthRatio = 0.24;
     const temporarySwitcherHeightRatio = 0.09;
     const nextStyle: any = {
@@ -69,6 +73,10 @@ const Slide = observer(({
       '--slide-edge-nav-icon-size': `${edgeNavIconSize}px`,
       '--slide-full-window-btn-size': `${fullWindowBtnSize}px`,
       '--slide-full-window-icon-size': `${fullWindowIconSize}px`,
+      '--slide-switcher-font-size': `${switcherFontSize}px`,
+      '--slide-switcher-desc-font-size': `${switcherDescFontSize}px`,
+      '--slide-switcher-input-height': `${switcherInputHeight}px`,
+      '--slide-switcher-option-height': `${switcherOptionHeight}px`,
       '--slide-temp-switcher-width-ratio': `${temporarySwitcherWidthRatio}`,
       '--slide-temp-switcher-height-ratio': `${temporarySwitcherHeightRatio}`,
     };
@@ -241,6 +249,10 @@ const Slide = observer(({
   const requestCreateSwitcherCompByPoint = (event) => {
     if (isReadOnly) return;
     if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const selection = window.getSelection?.();
+    selection?.removeAllRanges?.();
     const pageRect = event.currentTarget.getBoundingClientRect();
     const safeWidth = Math.max(pageRect?.width || 0, 1);
     const safeHeight = Math.max(pageRect?.height || 0, 1);
@@ -265,6 +277,7 @@ const Slide = observer(({
           }}
           onPaste={(event) => {
             if (isReadOnly) return;
+            if (event.target !== event.currentTarget) return;
             const imageItem = Array.from(event.clipboardData?.items ?? []).find((item: any) => {
               return item?.type?.startsWith('image/');
             });
@@ -324,6 +337,7 @@ const Slide = observer(({
               <CompSwitcher
                 textValue={temporarySwitcher.text ?? ''}
                 availableCompNames={store.getAvailableCompNames()}
+                availableCompScripts={store.getAvailableCompScripts()}
                 isReadOnly={isReadOnly}
                 onChangeText={(nextText) => {
                   store.updateTemporarySwitcherText(pageId, nextText);

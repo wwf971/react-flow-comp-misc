@@ -101,7 +101,8 @@ const CompUrl = observer(({
     const rootStyle = window.getComputedStyle(rootElement);
     const paddingTop = Number.parseFloat(rootStyle.paddingTop || '0') || 0;
     const paddingBottom = Number.parseFloat(rootStyle.paddingBottom || '0') || 0;
-    const minPixelY = Math.ceil(rowElement.offsetHeight + paddingTop + paddingBottom + 2);
+    const rowPixelY = Math.max(rowElement.offsetHeight, rowElement.scrollHeight);
+    const minPixelY = Math.ceil(rowPixelY + paddingTop + paddingBottom + 1);
     store.requestEnsureContainerMinPixelSize(containerId, {
       pixelX: containerSize.pixelX,
       pixelY: minPixelY,

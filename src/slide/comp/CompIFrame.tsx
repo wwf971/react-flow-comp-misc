@@ -90,7 +90,8 @@ const CompIFrame = observer(({
     const rootStyle = window.getComputedStyle(rootElement);
     const paddingTop = Number.parseFloat(rootStyle.paddingTop || '0') || 0;
     const paddingBottom = Number.parseFloat(rootStyle.paddingBottom || '0') || 0;
-    const minPixelY = Math.ceil(toolbarElement.offsetHeight + paddingTop + paddingBottom + 2);
+    const toolbarPixelY = Math.max(toolbarElement.offsetHeight, toolbarElement.scrollHeight);
+    const minPixelY = Math.ceil(toolbarPixelY + paddingTop + paddingBottom + 1);
     store.requestEnsureContainerMinPixelSize(containerId, {
       pixelX: containerSize.pixelX,
       pixelY: minPixelY,
