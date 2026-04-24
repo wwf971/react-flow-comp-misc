@@ -117,6 +117,11 @@ class SlideContentStore {
     pixelY: 0,
   };
 
+  slidePagePixelSize = {
+    pixelX: 0,
+    pixelY: 0,
+  };
+
   isPlayMode = false;
 
   isFullWindowMode = false;
@@ -144,8 +149,6 @@ class SlideContentStore {
   temporaryOverflowVisibleContainerIdMap = {};
 
   temporaryCopiedContainerPayload = null;
-
-  temporaryExcalidrawViewportByContainerId = {};
 
   constructor(seedData: any, persistStore: any = null) {
     this.persistStore = persistStore;
@@ -278,11 +281,14 @@ class SlideContentStore {
       pixelX: 0,
       pixelY: 0,
     };
+    this.slidePagePixelSize = {
+      pixelX: 0,
+      pixelY: 0,
+    };
     this.isPlayMode = false;
     this.temporarySwitcherByPageId = {};
     this.temporaryOverflowVisibleContainerIdMap = {};
     this.temporaryCopiedContainerPayload = null;
-    this.temporaryExcalidrawViewportByContainerId = {};
   }
 
   async requestInitializeSlides() {
@@ -826,29 +832,6 @@ class SlideContentStore {
     return Boolean(this.temporaryCopiedContainerPayload?.containerSnapshot);
   }
 
-  getExcalidrawViewport(containerId) {
-    if (!containerId) return null;
-    return this.temporaryExcalidrawViewportByContainerId[containerId] ?? null;
-  }
-
-  setExcalidrawViewport(containerId, nextViewport) {
-    if (!containerId) return;
-    const nextZoomValue = Number(nextViewport?.zoomValue);
-    const nextScrollX = Number(nextViewport?.scrollX);
-    const nextScrollY = Number(nextViewport?.scrollY);
-    if (!Number.isFinite(nextZoomValue)) return;
-    if (!Number.isFinite(nextScrollX)) return;
-    if (!Number.isFinite(nextScrollY)) return;
-    this.temporaryExcalidrawViewportByContainerId = {
-      ...this.temporaryExcalidrawViewportByContainerId,
-      [containerId]: {
-        zoomValue: nextZoomValue,
-        scrollX: nextScrollX,
-        scrollY: nextScrollY,
-      },
-    };
-  }
-
   requestCopyContainer(containerId) {
     const containerData = this.getContainerData(containerId);
     if (!containerData?.compId) return { ok: false };
@@ -970,6 +953,25 @@ class SlideContentStore {
       return;
     }
     this.slideSurfacePixelSize = {
+      pixelX: safePixelX,
+      pixelY: safePixelY,
+    };
+  }
+
+  getSlidePagePixelSize() {
+    return this.slidePagePixelSize ?? { pixelX: 0, pixelY: 0 };
+  }
+
+  setSlidePagePixelSize(nextPixelSize) {
+    const safePixelX = Math.max(0, Math.round(nextPixelSize?.pixelX ?? 0));
+    const safePixelY = Math.max(0, Math.round(nextPixelSize?.pixelY ?? 0));
+    if (
+      this.slidePagePixelSize.pixelX === safePixelX &&
+      this.slidePagePixelSize.pixelY === safePixelY
+    ) {
+      return;
+    }
+    this.slidePagePixelSize = {
       pixelX: safePixelX,
       pixelY: safePixelY,
     };

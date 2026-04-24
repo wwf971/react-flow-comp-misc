@@ -42,12 +42,17 @@ const Slide = observer(({
       const nextRect = entries[0]?.contentRect;
       if (!nextRect) return;
       setSlidePixelWidth(nextRect.width);
+      store.setSlidePagePixelSize({
+        pixelX: nextRect.width,
+        pixelY: nextRect.height,
+      });
     });
     resizeObserver.observe(element);
     return () => {
       resizeObserver.disconnect();
+      store.setSlidePagePixelSize({ pixelX: 0, pixelY: 0 });
     };
-  }, [isFullWindow, pageId]);
+  }, [isFullWindow, pageId, store]);
 
   const styleVars = useMemo((): any => {
     const safeSlidePixelWidth = Math.max(320, slidePixelWidth || 960);
