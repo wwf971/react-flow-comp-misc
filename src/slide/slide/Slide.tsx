@@ -50,7 +50,6 @@ const Slide = observer(({
     resizeObserver.observe(element);
     return () => {
       resizeObserver.disconnect();
-      store.setSlidePagePixelSize({ pixelX: 0, pixelY: 0 });
     };
   }, [isFullWindow, pageId, store]);
 

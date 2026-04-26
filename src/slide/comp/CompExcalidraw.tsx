@@ -6,8 +6,7 @@ import { useSlideStore } from '../contentStore';
 
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 8;
-const SAVE_DEBOUNCE_MS = 350;
-const SLIDE_WIDTH_EPSILON = 0.5;
+const ELEMENT_SAVE_DEBOUNCE_MS = 350;
 
 const clamp = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
@@ -32,85 +31,84 @@ const parseSceneText = (text: string, sceneVersion: number) => {
   const files = scene.files && typeof scene.files === 'object' ? scene.files : {};
   const appStateRaw =
     scene.appState && typeof scene.appState === 'object' ? scene.appState : {};
+  const viewBackgroundColor = appStateRaw.viewBackgroundColor ?? '#ffffff';
+  const zoomValue = Number(appStateRaw?.zoom?.value);
+  const scrollX = Number(appStateRaw?.scrollX);
+  const scrollY = Number(appStateRaw?.scrollY);
 
-  const {
-    zoom: persistedZoom,
-    scrollX: persistedScrollXRaw,
-    scrollY: persistedScrollYRaw,
-    collaborators: persistedCollaborators,
-    ...appStateRest
-  } = appStateRaw;
+  const legacyZoomBySlideWidth = Number(scene?.viewportNormalized?.zoomBySlideWidth);
+  const legacyZoomValue = Number(appStateRaw?.zoom?.value);
+  const legacyScrollX = Number(appStateRaw?.scrollX);
+  const legacyScrollY = Number(appStateRaw?.scrollY);
 
-  let collaborators: any = persistedCollaborators;
-  if (!(collaborators instanceof Map)) {
-    if (Array.isArray(collaborators)) {
-      collaborators = new Map(collaborators);
-    } else if (collaborators && typeof collaborators === 'object') {
-      collaborators = new Map(Object.entries(collaborators));
-    } else {
-      collaborators = new Map();
-    }
+  let legacyViewport: {
+    zoomBySlideWidth: number | null;
+    zoomValue: number | null;
+    scrollX: number;
+    scrollY: number;
+  } | null = null;
+
+  const hasLegacyZoom =
+    isFinitePositive(legacyZoomBySlideWidth) || isFinitePositive(legacyZoomValue);
+  const hasLegacyScroll = Number.isFinite(legacyScrollX) || Number.isFinite(legacyScrollY);
+  if (hasLegacyZoom || hasLegacyScroll) {
+    legacyViewport = {
+      zoomBySlideWidth: isFinitePositive(legacyZoomBySlideWidth) ? legacyZoomBySlideWidth : null,
+      zoomValue: isFinitePositive(legacyZoomValue) ? legacyZoomValue : null,
+      scrollX: Number.isFinite(legacyScrollX) ? legacyScrollX : 0,
+      scrollY: Number.isFinite(legacyScrollY) ? legacyScrollY : 0,
+    };
   }
-
-  const appStateForInitialData = {
-    viewBackgroundColor: '#ffffff',
-    ...appStateRest,
-    collaborators,
-  };
-
-  const zoomBySlideWidthRaw = Number(scene?.viewportNormalized?.zoomBySlideWidth);
-  const persistedZoomValueRaw = Number(persistedZoom?.value);
-  const persistedScrollX = Number(persistedScrollXRaw);
-  const persistedScrollY = Number(persistedScrollYRaw);
-
-  const persistedViewport = {
-    zoomBySlideWidth: isFinitePositive(zoomBySlideWidthRaw) ? zoomBySlideWidthRaw : null,
-    persistedZoomValue: isFinitePositive(persistedZoomValueRaw) ? persistedZoomValueRaw : null,
-    persistedScrollX: Number.isFinite(persistedScrollX) ? persistedScrollX : 0,
-    persistedScrollY: Number.isFinite(persistedScrollY) ? persistedScrollY : 0,
-  };
 
   return {
     ok: true as const,
     initialData: {
       elements,
       files,
-      appState: appStateForInitialData,
+      appState: {
+        viewBackgroundColor,
+        collaborators: new Map(),
+        ...(isFinitePositive(zoomValue) ? { zoom: { value: zoomValue } } : {}),
+        ...(Number.isFinite(scrollX) ? { scrollX } : {}),
+        ...(Number.isFinite(scrollY) ? { scrollY } : {}),
+      },
       sceneVersion,
     },
-    persistedViewport,
+    legacyViewport,
   };
 };
 
-const buildPersistSnapshot = ({
+const buildElementsSnapshot = ({
   elements,
   files,
   viewBackgroundColor,
-  zoomValue,
-  scrollX,
-  scrollY,
-  baseSlidePixelX,
   sceneVersion,
 }: any) => {
-  const hasValidSlide = isFinitePositive(baseSlidePixelX);
-  const hasValidZoom = isFinitePositive(zoomValue);
   return {
     elements,
     files,
     appState: {
       viewBackgroundColor: viewBackgroundColor ?? '#ffffff',
-      ...(hasValidZoom ? { zoom: { value: zoomValue } } : {}),
-      ...(Number.isFinite(scrollX) ? { scrollX } : {}),
-      ...(Number.isFinite(scrollY) ? { scrollY } : {}),
     },
-    ...(hasValidSlide && hasValidZoom
-      ? {
-          viewportNormalized: {
-            zoomBySlideWidth: zoomValue / baseSlidePixelX,
-          },
-        }
-      : {}),
     sceneVersion,
+  };
+};
+
+const computeAppliedViewport = (
+  sceneViewport: any,
+  slidePixelX: number,
+): { zoomValue: number; scrollX: number; scrollY: number } => {
+  const zoomBySlideWidth = Number(sceneViewport?.zoomBySlideWidth);
+  const scrollX = Number(sceneViewport?.scrollX ?? 0);
+  const scrollY = Number(sceneViewport?.scrollY ?? 0);
+  let zoomValue = 1;
+  if (isFinitePositive(zoomBySlideWidth) && isFinitePositive(slidePixelX)) {
+    zoomValue = clamp(zoomBySlideWidth * slidePixelX, ZOOM_MIN, ZOOM_MAX);
+  }
+  return {
+    zoomValue,
+    scrollX: Number.isFinite(scrollX) ? scrollX : 0,
+    scrollY: Number.isFinite(scrollY) ? scrollY : 0,
   };
 };
 
@@ -124,19 +122,34 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   const [isEditEnabled, setIsEditEnabled] = useState(true);
   const [isPanEnabled, setIsPanEnabled] = useState(true);
   const [isZoomEnabled, setIsZoomEnabled] = useState(true);
+  const [currentZoomValue, setCurrentZoomValue] = useState(1);
 
+  const rootElementRef = useRef<HTMLDivElement | null>(null);
+  const isZoomEnabledRef = useRef(isZoomEnabled);
+  isZoomEnabledRef.current = isZoomEnabled;
   const excalidrawApiRef = useRef<any>(null);
   const saveTimerRef = useRef<any>(null);
-  const lastSceneSnapshotRef = useRef<string>('');
-  const slideWidthBaseRef = useRef<number>(0);
-  const persistedViewportRef = useRef<any>(null);
-  const isViewportInitializedRef = useRef(false);
-  const lockedViewportRef = useRef<any>(null);
+  const lastElementsSnapshotJsonRef = useRef<string>('');
+  const pendingElementsSnapshotJsonRef = useRef<string | null>(null);
+  const sceneResourceIdRef = useRef<string>('');
   const isApplyingViewportRef = useRef(false);
+  const isViewportPointerGestureActiveRef = useRef(false);
+  const viewportDiscreteIntentCountRef = useRef(0);
+  const prevAppliedViewportRef = useRef<{ zoomValue: number; scrollX: number; scrollY: number }>({
+    zoomValue: 1,
+    scrollX: 0,
+    scrollY: 0,
+  });
+  const legacyViewportRef = useRef<any>(null);
+  const hasAppliedInitialViewportRef = useRef(false);
   const prevIsPlayModeRef = useRef(false);
+  const containerIdRef = useRef<string>(containerId);
+  containerIdRef.current = containerId;
 
   const sceneResourceId = data?.sceneResourceId ?? '';
   const sceneVersion = data?.sceneVersion ?? 1;
+  const sceneViewport = data?.sceneViewport ?? null;
+  sceneResourceIdRef.current = sceneResourceId;
 
   useEffect(() => {
     let isCancelled = false;
@@ -144,7 +157,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     const applyParsed = (text: string) => {
       const parsed = parseSceneText(text, sceneVersion);
       if (!parsed.ok) {
-        persistedViewportRef.current = null;
+        legacyViewportRef.current = null;
         setInitialDataForExcalidraw({
           elements: [],
           files: {},
@@ -156,7 +169,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
         });
         return false;
       }
-      persistedViewportRef.current = parsed.persistedViewport;
+      legacyViewportRef.current = parsed.legacyViewport ?? null;
       setInitialDataForExcalidraw(parsed.initialData);
       return true;
     };
@@ -197,17 +210,75 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
   }, [sceneResourceId, isReadOnly, store, containerId, sceneVersion]);
 
   useEffect(() => {
-    slideWidthBaseRef.current = 0;
-    isViewportInitializedRef.current = false;
-    lockedViewportRef.current = null;
-    lastSceneSnapshotRef.current = '';
+    lastElementsSnapshotJsonRef.current = '';
+    prevAppliedViewportRef.current = { zoomValue: 1, scrollX: 0, scrollY: 0 };
+    legacyViewportRef.current = null;
+    hasAppliedInitialViewportRef.current = false;
   }, [containerId, sceneResourceId]);
 
   useEffect(() => {
     return () => {
-      if (!saveTimerRef.current) return;
-      window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const pending = pendingElementsSnapshotJsonRef.current;
+      const pendingResourceId = sceneResourceIdRef.current;
+      pendingElementsSnapshotJsonRef.current = null;
+      if (pending && pendingResourceId) {
+        store.requestSetResourceText(pendingResourceId, pending);
+      }
+    };
+  }, [store]);
+
+  useEffect(() => {
+    const rootElement = rootElementRef.current;
+    if (!rootElement) return undefined;
+    let pointerGestureReleaseRaf = 0;
+
+    const markViewportDiscreteIntent = (count = 1) => {
+      viewportDiscreteIntentCountRef.current = Math.min(
+        64,
+        viewportDiscreteIntentCountRef.current + Math.max(1, count),
+      );
+    };
+
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        markViewportDiscreteIntent(6);
+      }
+      if (isZoomEnabledRef.current) return;
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const handlePointerDownCapture = () => {
+      isViewportPointerGestureActiveRef.current = true;
+      markViewportDiscreteIntent(6);
+    };
+    const handleWindowPointerUpCapture = () => {
+      if (pointerGestureReleaseRaf) {
+        window.cancelAnimationFrame(pointerGestureReleaseRaf);
+        pointerGestureReleaseRaf = 0;
+      }
+      pointerGestureReleaseRaf = window.requestAnimationFrame(() => {
+        isViewportPointerGestureActiveRef.current = false;
+        pointerGestureReleaseRaf = 0;
+      });
+    };
+    rootElement.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+    rootElement.addEventListener('pointerdown', handlePointerDownCapture, { capture: true });
+    window.addEventListener('pointerup', handleWindowPointerUpCapture, true);
+    return () => {
+      rootElement.removeEventListener('wheel', handleWheel, { capture: true } as any);
+      rootElement.removeEventListener('pointerdown', handlePointerDownCapture, {
+        capture: true,
+      } as any);
+      window.removeEventListener('pointerup', handleWindowPointerUpCapture, true);
+      if (pointerGestureReleaseRaf) {
+        window.cancelAnimationFrame(pointerGestureReleaseRaf);
+        pointerGestureReleaseRaf = 0;
+      }
     };
   }, []);
 
@@ -215,38 +286,12 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     const isEntered = isPlayMode && !prevIsPlayModeRef.current;
     prevIsPlayModeRef.current = isPlayMode;
     if (!isEntered) return;
-    const api = excalidrawApiRef.current;
-    if (api) {
-      const appState = api.getAppState();
-      lockedViewportRef.current = {
-        zoomValue: appState?.zoom?.value ?? 1,
-        scrollX: appState?.scrollX ?? 0,
-        scrollY: appState?.scrollY ?? 0,
-      };
-    }
     setIsEditEnabled(false);
     setIsPanEnabled(false);
     setIsZoomEnabled(false);
   }, [isPlayMode]);
 
   useEffect(() => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    if (!isViewportInitializedRef.current) return;
-    if (isPanEnabled && isZoomEnabled) {
-      lockedViewportRef.current = null;
-      return;
-    }
-    const appState = api.getAppState();
-    lockedViewportRef.current = {
-      zoomValue: appState?.zoom?.value ?? 1,
-      scrollX: appState?.scrollX ?? 0,
-      scrollY: appState?.scrollY ?? 0,
-    };
-  }, [isPanEnabled, isZoomEnabled, isApiReady]);
-
-  useEffect(() => {
-    if (isViewportInitializedRef.current) return;
     if (!isApiReady) return;
     const api = excalidrawApiRef.current;
     if (!api) return;
@@ -254,236 +299,291 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
     const slidePixelX = Number(slidePagePixelSize?.pixelX);
     if (!isFinitePositive(slidePixelX)) return;
 
-    const persisted = persistedViewportRef.current ?? {};
-
-    let nextZoomValue = 1;
-    if (isFinitePositive(persisted.zoomBySlideWidth)) {
-      nextZoomValue = clamp(persisted.zoomBySlideWidth * slidePixelX, ZOOM_MIN, ZOOM_MAX);
-    } else if (isFinitePositive(persisted.persistedZoomValue)) {
-      nextZoomValue = clamp(persisted.persistedZoomValue, ZOOM_MIN, ZOOM_MAX);
+    let effectiveViewport = sceneViewport;
+    if (legacyViewportRef.current) {
+      const legacy = legacyViewportRef.current;
+      let zoomBySlideWidth = Number(legacy.zoomBySlideWidth);
+      if (!isFinitePositive(zoomBySlideWidth) && isFinitePositive(Number(legacy.zoomValue))) {
+        zoomBySlideWidth = Number(legacy.zoomValue) / slidePixelX;
+      }
+      if (isFinitePositive(zoomBySlideWidth)) {
+        effectiveViewport = {
+          zoomBySlideWidth,
+          scrollX: Number.isFinite(legacy.scrollX) ? Number(legacy.scrollX) : 0,
+          scrollY: Number.isFinite(legacy.scrollY) ? Number(legacy.scrollY) : 0,
+        };
+        if (!isReadOnly) {
+          store.requestContainerCompDataUpdate(containerId, {
+            sceneViewport: effectiveViewport,
+          });
+        }
+        legacyViewportRef.current = null;
+      }
     }
 
-    const nextScrollX = Number(persisted.persistedScrollX ?? 0);
-    const nextScrollY = Number(persisted.persistedScrollY ?? 0);
+    const { zoomValue, scrollX, scrollY } = computeAppliedViewport(effectiveViewport, slidePixelX);
 
-    isApplyingViewportRef.current = true;
-    api.updateScene({
-      appState: {
-        zoom: { value: nextZoomValue },
-        scrollX: nextScrollX,
-        scrollY: nextScrollY,
-      },
-    });
-    requestAnimationFrame(() => {
-      isApplyingViewportRef.current = false;
-    });
+    const current = prevAppliedViewportRef.current;
+    const isSame =
+      Math.abs(current.zoomValue - zoomValue) < 0.0001 &&
+      Math.abs(current.scrollX - scrollX) < 0.5 &&
+      Math.abs(current.scrollY - scrollY) < 0.5;
 
-    slideWidthBaseRef.current = slidePixelX;
-    if (!isPanEnabled || !isZoomEnabled) {
-      lockedViewportRef.current = {
-        zoomValue: nextZoomValue,
-        scrollX: nextScrollX,
-        scrollY: nextScrollY,
-      };
+    if (!isSame) {
+      isApplyingViewportRef.current = true;
+      api.updateScene({
+        appState: {
+          zoom: { value: zoomValue },
+          scrollX,
+          scrollY,
+        },
+      });
+      requestAnimationFrame(() => {
+        isApplyingViewportRef.current = false;
+      });
+      prevAppliedViewportRef.current = { zoomValue, scrollX, scrollY };
+      setCurrentZoomValue(zoomValue);
     }
 
-    const snapshot = buildPersistSnapshot({
-      elements: initialDataForExcalidraw.elements,
-      files: initialDataForExcalidraw.files,
-      viewBackgroundColor: initialDataForExcalidraw.appState?.viewBackgroundColor,
-      zoomValue: nextZoomValue,
-      scrollX: nextScrollX,
-      scrollY: nextScrollY,
-      baseSlidePixelX: slidePixelX,
-      sceneVersion,
-    });
-    lastSceneSnapshotRef.current = JSON.stringify(snapshot);
-    isViewportInitializedRef.current = true;
+    hasAppliedInitialViewportRef.current = true;
   }, [
     isApiReady,
     initialDataForExcalidraw,
     slidePagePixelSize.pixelX,
-    isPanEnabled,
-    isZoomEnabled,
-    sceneVersion,
+    sceneViewport,
+    containerId,
+    isReadOnly,
+    store,
   ]);
 
-  useEffect(() => {
-    if (!isViewportInitializedRef.current) return;
+  const saveViewportToCompData = (
+    zoomValue: number,
+    scrollX: number,
+    scrollY: number,
+    slidePixelX: number,
+  ) => {
+    if (isReadOnly) return;
+    if (!isFinitePositive(slidePixelX)) return;
+    if (!isFinitePositive(zoomValue)) return;
+    const zoomBySlideWidth = zoomValue / slidePixelX;
+    store.requestContainerCompDataUpdate(containerId, {
+      sceneViewport: { zoomBySlideWidth, scrollX, scrollY },
+    });
+  };
+
+  const commitViewportFromApi = (api: any, slidePixelX: number) => {
+    if (!api) return;
+    const appState = api.getAppState();
+    const zoomValue = Number(appState?.zoom?.value ?? 1);
+    const scrollX = Number(appState?.scrollX ?? 0);
+    const scrollY = Number(appState?.scrollY ?? 0);
+    prevAppliedViewportRef.current = { zoomValue, scrollX, scrollY };
+    setCurrentZoomValue(zoomValue);
+    saveViewportToCompData(zoomValue, scrollX, scrollY, slidePixelX);
+  };
+
+  const handleFitToContent = () => {
     const api = excalidrawApiRef.current;
     if (!api) return;
-    const nextSlidePixelX = Number(slidePagePixelSize?.pixelX);
-    if (!isFinitePositive(nextSlidePixelX)) return;
-    const baseSlidePixelX = slideWidthBaseRef.current;
-    if (!isFinitePositive(baseSlidePixelX)) return;
-    if (Math.abs(nextSlidePixelX - baseSlidePixelX) < SLIDE_WIDTH_EPSILON) return;
+    const elements = api.getSceneElements();
+    if (!elements || elements.length === 0) return;
+    const slidePixelX = Number(slidePagePixelSize?.pixelX ?? 0);
+    if (!isFinitePositive(slidePixelX)) return;
+    viewportDiscreteIntentCountRef.current = Math.min(
+      24,
+      viewportDiscreteIntentCountRef.current + 10,
+    );
 
+    isApplyingViewportRef.current = true;
+    api.scrollToContent(elements, {
+      fitToViewport: true,
+      viewportZoomFactor: 0.9,
+      animate: false,
+    });
+    commitViewportFromApi(api, slidePixelX);
+    requestAnimationFrame(() => {
+      const api2 = excalidrawApiRef.current;
+      isApplyingViewportRef.current = false;
+      commitViewportFromApi(api2, slidePixelX);
+    });
+  };
+
+  const handleCustomZoomStep = (direction: 'in' | 'out') => {
+    const api = excalidrawApiRef.current;
+    if (!api) return;
+    const slidePixelX = Number(slidePagePixelSize?.pixelX ?? 0);
+    if (!isFinitePositive(slidePixelX)) return;
     const appState = api.getAppState();
-    const currentZoomValue = Number(appState?.zoom?.value ?? 1);
-    const currentScrollX = Number(appState?.scrollX ?? 0);
-    const currentScrollY = Number(appState?.scrollY ?? 0);
-    const resizeScale = nextSlidePixelX / baseSlidePixelX;
-    if (!isFinitePositive(resizeScale)) return;
-    const nextZoomValue = clamp(currentZoomValue * resizeScale, ZOOM_MIN, ZOOM_MAX);
-
+    const currentZoom = Number(appState?.zoom?.value ?? 1);
+    const scrollX = Number(appState?.scrollX ?? 0);
+    const scrollY = Number(appState?.scrollY ?? 0);
+    const factor = direction === 'in' ? 1.1 : 1 / 1.1;
+    const nextZoom = clamp(currentZoom * factor, ZOOM_MIN, ZOOM_MAX);
+    if (Math.abs(nextZoom - currentZoom) < 0.0001) return;
+    viewportDiscreteIntentCountRef.current = Math.min(
+      64,
+      viewportDiscreteIntentCountRef.current + 12,
+    );
     isApplyingViewportRef.current = true;
     api.updateScene({
       appState: {
-        zoom: { value: nextZoomValue },
-        scrollX: currentScrollX,
-        scrollY: currentScrollY,
+        zoom: { value: nextZoom },
+        scrollX,
+        scrollY,
       },
     });
     requestAnimationFrame(() => {
       isApplyingViewportRef.current = false;
+      commitViewportFromApi(api, slidePixelX);
     });
-
-    slideWidthBaseRef.current = nextSlidePixelX;
-    if (!isPanEnabled || !isZoomEnabled) {
-      lockedViewportRef.current = {
-        zoomValue: nextZoomValue,
-        scrollX: currentScrollX,
-        scrollY: currentScrollY,
-      };
-    }
-  }, [slidePagePixelSize.pixelX, isPanEnabled, isZoomEnabled]);
-
-  const lockViewportToCurrent = () => {
-    const api = excalidrawApiRef.current;
-    if (!api) return;
-    const appState = api.getAppState();
-    lockedViewportRef.current = {
-      zoomValue: appState?.zoom?.value ?? 1,
-      scrollX: appState?.scrollX ?? 0,
-      scrollY: appState?.scrollY ?? 0,
-    };
   };
 
-  const queueSaveScene = (sceneData: any) => {
+  const queueSaveElements = (
+    elements: any,
+    files: any,
+    viewBackgroundColor: string,
+  ) => {
     if (!sceneResourceId) return;
     if (isReadOnly) return;
-    if (!isViewportInitializedRef.current) return;
-    const baseSlidePixelX = Number(
-      slideWidthBaseRef.current || slidePagePixelSize?.pixelX || 0,
-    );
-    const snapshot = buildPersistSnapshot({
-      elements: Array.isArray(sceneData?.elements) ? sceneData.elements : [],
-      files: sceneData?.files && typeof sceneData.files === 'object' ? sceneData.files : {},
-      viewBackgroundColor: sceneData?.appState?.viewBackgroundColor ?? '#ffffff',
-      zoomValue: Number(sceneData?.appState?.zoom?.value),
-      scrollX: Number(sceneData?.appState?.scrollX),
-      scrollY: Number(sceneData?.appState?.scrollY),
-      baseSlidePixelX,
+    const snapshot = buildElementsSnapshot({
+      elements,
+      files,
+      viewBackgroundColor,
       sceneVersion,
     });
     const nextSnapshotJson = JSON.stringify(snapshot);
-    if (nextSnapshotJson === lastSceneSnapshotRef.current) return;
-    lastSceneSnapshotRef.current = nextSnapshotJson;
+    if (nextSnapshotJson === lastElementsSnapshotJsonRef.current) return;
+    lastElementsSnapshotJsonRef.current = nextSnapshotJson;
+    pendingElementsSnapshotJsonRef.current = nextSnapshotJson;
     store.markCompDirtyByContainerId(containerId, 'updated');
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
     }
     saveTimerRef.current = window.setTimeout(async () => {
+      saveTimerRef.current = null;
+      const jsonToSave = pendingElementsSnapshotJsonRef.current;
+      pendingElementsSnapshotJsonRef.current = null;
+      if (!jsonToSave) return;
       const saveResult = await store.requestSetResourceText(
         sceneResourceId,
-        nextSnapshotJson,
+        jsonToSave,
       );
       if (!saveResult?.ok) {
         setErrorText('Failed to save scene resource');
         return;
       }
       setErrorText('');
-    }, SAVE_DEBOUNCE_MS);
+    }, ELEMENT_SAVE_DEBOUNCE_MS);
   };
 
   if (!initialDataForExcalidraw) {
     return <div className="slide-excalidraw-loading">Loading whiteboard...</div>;
   }
 
+  const slidePixelXForDebug = Number(slidePagePixelSize?.pixelX ?? 0);
+  const zoomBySlideWidthForDebug = isFinitePositive(slidePixelXForDebug)
+    ? currentZoomValue / slidePixelXForDebug
+    : 0;
+  const persistedZoomBySlideWidthDisplay = Number(sceneViewport?.zoomBySlideWidth);
+
   return (
     <div
       className="slide-excalidraw-root"
+      ref={rootElementRef}
       onContextMenuCapture={(event) => {
         event.stopPropagation();
       }}
     >
       <Excalidraw
         initialData={initialDataForExcalidraw}
-        viewModeEnabled={isReadOnly || !isEditEnabled}
+        viewModeEnabled={isReadOnly || (!isEditEnabled && !isPanEnabled && !isZoomEnabled)}
         excalidrawAPI={(api) => {
           excalidrawApiRef.current = api;
           setIsApiReady(true);
         }}
         onChange={(elements, appState, files) => {
-          const currentZoomValue = Number(appState?.zoom?.value ?? 1);
-          const currentScrollX = Number(appState?.scrollX ?? 0);
-          const currentScrollY = Number(appState?.scrollY ?? 0);
+          const nextZoomValue = Number(appState?.zoom?.value ?? 1);
+          const nextScrollX = Number(appState?.scrollX ?? 0);
+          const nextScrollY = Number(appState?.scrollY ?? 0);
+          const nextBackgroundColor = appState?.viewBackgroundColor ?? '#ffffff';
+          const slidePixelX = Number(slidePagePixelSize?.pixelX ?? 0);
 
-          let appliedZoomValue = currentZoomValue;
-          let appliedScrollX = currentScrollX;
-          let appliedScrollY = currentScrollY;
+          if (!isApplyingViewportRef.current && hasAppliedInitialViewportRef.current) {
+            const prev = prevAppliedViewportRef.current;
+            const zoomChanged = Math.abs(nextZoomValue - prev.zoomValue) > 0.0001;
+            const scrollXChanged = Math.abs(nextScrollX - prev.scrollX) > 0.1;
+            const scrollYChanged = Math.abs(nextScrollY - prev.scrollY) > 0.1;
 
-          if (
-            (!isPanEnabled || !isZoomEnabled) &&
-            lockedViewportRef.current &&
-            !isApplyingViewportRef.current
-          ) {
-            const locked = lockedViewportRef.current;
-            const hasViewportChange =
-              (!isZoomEnabled && Math.abs(currentZoomValue - locked.zoomValue) > 0.0001) ||
-              (!isPanEnabled && Math.abs(currentScrollX - locked.scrollX) > 0.1) ||
-              (!isPanEnabled && Math.abs(currentScrollY - locked.scrollY) > 0.1);
-            if (hasViewportChange && excalidrawApiRef.current) {
-              const targetZoomValue = isZoomEnabled ? currentZoomValue : locked.zoomValue;
-              const targetScrollX = isPanEnabled ? currentScrollX : locked.scrollX;
-              const targetScrollY = isPanEnabled ? currentScrollY : locked.scrollY;
-              appliedZoomValue = targetZoomValue;
-              appliedScrollX = targetScrollX;
-              appliedScrollY = targetScrollY;
+            let finalZoom = nextZoomValue;
+            let finalScrollX = nextScrollX;
+            let finalScrollY = nextScrollY;
+            let needsRevert = false;
+
+            if (!isPanEnabled && !zoomChanged && (scrollXChanged || scrollYChanged)) {
+              finalScrollX = prev.scrollX;
+              finalScrollY = prev.scrollY;
+              needsRevert = true;
+            }
+
+            if (needsRevert && excalidrawApiRef.current) {
               isApplyingViewportRef.current = true;
               excalidrawApiRef.current.updateScene({
                 appState: {
-                  zoom: { value: targetZoomValue },
-                  scrollX: targetScrollX,
-                  scrollY: targetScrollY,
+                  zoom: { value: finalZoom },
+                  scrollX: finalScrollX,
+                  scrollY: finalScrollY,
                 },
               });
               requestAnimationFrame(() => {
                 isApplyingViewportRef.current = false;
               });
             }
+
+            const finalZoomChanged = Math.abs(finalZoom - prev.zoomValue) > 0.0001;
+            const finalScrollXChanged = Math.abs(finalScrollX - prev.scrollX) > 0.1;
+            const finalScrollYChanged = Math.abs(finalScrollY - prev.scrollY) > 0.1;
+            const viewportChanged = finalZoomChanged || finalScrollXChanged || finalScrollYChanged;
+            if (viewportChanged) {
+              const isFromPointerGesture = isViewportPointerGestureActiveRef.current;
+              const isFromDiscreteIntent = viewportDiscreteIntentCountRef.current > 0;
+              const isFromUserIntent = isFromPointerGesture || isFromDiscreteIntent;
+              if (!isFromUserIntent && excalidrawApiRef.current) {
+                isApplyingViewportRef.current = true;
+                excalidrawApiRef.current.updateScene({
+                  appState: {
+                    zoom: { value: prev.zoomValue },
+                    scrollX: prev.scrollX,
+                    scrollY: prev.scrollY,
+                  },
+                });
+                requestAnimationFrame(() => {
+                  isApplyingViewportRef.current = false;
+                });
+                return;
+              }
+              if (!isFromPointerGesture && viewportDiscreteIntentCountRef.current > 0) {
+                viewportDiscreteIntentCountRef.current -= 1;
+              }
+              prevAppliedViewportRef.current = {
+                zoomValue: finalZoom,
+                scrollX: finalScrollX,
+                scrollY: finalScrollY,
+              };
+              if (Math.abs(finalZoom - currentZoomValue) > 0.0001) {
+                setCurrentZoomValue(finalZoom);
+              }
+              saveViewportToCompData(finalZoom, finalScrollX, finalScrollY, slidePixelX);
+            }
           }
 
           if (isReadOnly) return;
-          queueSaveScene({
+          queueSaveElements(
             elements,
-            appState: {
-              viewBackgroundColor: appState?.viewBackgroundColor ?? '#ffffff',
-              zoom: { value: appliedZoomValue },
-              scrollX: appliedScrollX,
-              scrollY: appliedScrollY,
-            },
             files,
-          });
+            nextBackgroundColor,
+          );
         }}
       />
-      {!isEditEnabled && !isPanEnabled && !isZoomEnabled ? (
-        <div
-          className="slide-excalidraw-pan-blocker"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onPointerMove={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-          onPointerUp={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
-        />
-      ) : null}
       <div
         className="slide-excalidraw-lock-panel"
         onWheelCapture={(event) => {
@@ -492,6 +592,14 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
           event.stopPropagation();
         }}
       >
+        <button
+          className="slide-excalidraw-mode-btn"
+          type="button"
+          disabled={isReadOnly}
+          onClick={handleFitToContent}
+        >
+          Fit
+        </button>
         <button
           className={`slide-excalidraw-mode-btn ${isEditEnabled ? 'is-play' : ''}`}
           type="button"
@@ -507,13 +615,7 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
           type="button"
           disabled={isReadOnly}
           onClick={() => {
-            setIsPanEnabled((isPrevEnabled) => {
-              const isNextEnabled = !isPrevEnabled;
-              if (!isNextEnabled) {
-                lockViewportToCurrent();
-              }
-              return isNextEnabled;
-            });
+            setIsPanEnabled((isPrevEnabled) => !isPrevEnabled);
           }}
         >
           Pan
@@ -523,17 +625,48 @@ const CompExcalidraw = observer(({ data, containerId, isReadOnly }: any) => {
           type="button"
           disabled={isReadOnly}
           onClick={() => {
-            setIsZoomEnabled((isPrevEnabled) => {
-              const isNextEnabled = !isPrevEnabled;
-              if (!isNextEnabled) {
-                lockViewportToCurrent();
-              }
-              return isNextEnabled;
-            });
+            setIsZoomEnabled((isPrevEnabled) => !isPrevEnabled);
           }}
         >
           Zoom
         </button>
+        <button
+          className="slide-excalidraw-mode-btn"
+          type="button"
+          disabled={isReadOnly}
+          onClick={() => {
+            handleCustomZoomStep('out');
+          }}
+        >
+          -
+        </button>
+        <button
+          className="slide-excalidraw-mode-btn"
+          type="button"
+          disabled={isReadOnly}
+          onClick={() => {
+            handleCustomZoomStep('in');
+          }}
+        >
+          +
+        </button>
+      </div>
+      <div className="slide-excalidraw-debug-panel">
+        <div className="slide-excalidraw-debug-row">
+          zoomBySlideWidth: {zoomBySlideWidthForDebug.toFixed(6)}
+        </div>
+        <div className="slide-excalidraw-debug-row">
+          zoom: {Math.round(currentZoomValue * 100)}%
+        </div>
+        <div className="slide-excalidraw-debug-row">
+          slide width: {Math.round(slidePixelXForDebug)}px
+        </div>
+        <div className="slide-excalidraw-debug-row">
+          persisted zoomBySlideWidth:{' '}
+          {isFinitePositive(persistedZoomBySlideWidthDisplay)
+            ? persistedZoomBySlideWidthDisplay.toFixed(6)
+            : 'null'}
+        </div>
       </div>
       {errorText ? <div className="slide-excalidraw-error">{errorText}</div> : null}
     </div>

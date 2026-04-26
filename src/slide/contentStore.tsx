@@ -97,58 +97,36 @@ class SlideContentStore {
     currentPageId: '',
     aspectRatio: { x: 16, y: 9 },
   };
-
   pageDataById = {};
-
   containerDataById = {};
-
   compDataById = {};
-
   selectedContainerId = '';
-
   selectedCompId = '';
-
   editingCompId = '';
-
   isSlideSurfaceSelected = false;
-
   slideSurfacePixelSize = {
     pixelX: 0,
     pixelY: 0,
   };
-
   slidePagePixelSize = {
     pixelX: 0,
     pixelY: 0,
   };
-
   isPlayMode = false;
-
   isFullWindowMode = false;
-
   persistStore = null;
-
   slideItems = [{ id: 'local-demo', name: 'Local Demo' }];
-
   currentSlideId = 'local-demo';
-
   containerPageIdByContainerId = {};
-
   dirtyPageStateById = {};
-
   isPersisting = false;
-
   isSlidesInitializing = false;
-
   isSlideSwitching = false;
-
   persistFailureMessage = '';
-
   temporarySwitcherByPageId = {};
-
   temporaryOverflowVisibleContainerIdMap = {};
-
   temporaryCopiedContainerPayload = null;
+  resourceTextCacheByResourceId = {};
 
   constructor(seedData: any, persistStore: any = null) {
     this.persistStore = persistStore;
@@ -233,6 +211,7 @@ class SlideContentStore {
       return {
         sceneResourceId: '',
         sceneVersion: 1,
+        sceneViewport: null,
       };
     }
     if (compName === 'CompIFrame') {
@@ -288,6 +267,7 @@ class SlideContentStore {
     this.isPlayMode = false;
     this.temporarySwitcherByPageId = {};
     this.temporaryOverflowVisibleContainerIdMap = {};
+    this.resourceTextCacheByResourceId = {};
     this.temporaryCopiedContainerPayload = null;
   }
 
@@ -487,7 +467,9 @@ class SlideContentStore {
   }
 
   async requestSetResourceText(resourceId, text) {
-    if (!this.persistStore) return { ok: false };
+    if (!resourceId) return { ok: false };
+    this.resourceTextCacheByResourceId[resourceId] = text;
+    if (!this.persistStore) return { ok: true };
     const result = await this.persistStore.setResourceText(resourceId, text);
     if (!result?.ok) {
       runInAction(() => {
@@ -499,6 +481,11 @@ class SlideContentStore {
   }
 
   async requestGetResourceText(resourceId) {
+    if (!resourceId) return { ok: false, text: '' };
+    const cachedText = this.resourceTextCacheByResourceId[resourceId];
+    if (typeof cachedText === 'string') {
+      return { ok: true, text: cachedText };
+    }
     if (!this.persistStore) return { ok: false, text: '' };
     const result = await this.persistStore.getResourceText(resourceId);
     if (!result?.ok) {
@@ -507,7 +494,9 @@ class SlideContentStore {
       });
       return { ok: false, text: '' };
     }
-    return { ok: true, text: result.text ?? '' };
+    const loadedText = result.text ?? '';
+    this.resourceTextCacheByResourceId[resourceId] = loadedText;
+    return { ok: true, text: loadedText };
   }
 
   async requestDeleteCurrentSlide() {
