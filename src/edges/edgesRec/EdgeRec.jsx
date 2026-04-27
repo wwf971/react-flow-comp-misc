@@ -4,14 +4,10 @@ each control point(including start/end points) can have a preference for the dir
   - for end points, there is only preference on one side.
   - for control points, preference on both sides can be specified independently.
 
-
-
  * Orthogonal routing case key format: "<relativePosition>|<startEmissionPreference>|<endEmissionPreference>".
  * The end preference is normalized using (toPoint -> fromPoint), so it is treated as the end point's own emission
  * toward its next segment; therefore this segment's final direction arrives from the opposite side for up/down/left/right.
  * "horizontal" and "vertical" are axis hints, so they are not opposite-direction constraints.
-
-
 
 */
 import { createContext, memo, useCallback, useContext, useMemo } from 'react';

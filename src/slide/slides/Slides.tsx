@@ -14,11 +14,12 @@ const Slides = observer(({ store, getComp }: any) => {
   const isPersisting = store.isPersisting;
   const isSlidesInitializing = store.isSlidesInitializing;
   const isSlideSwitching = store.isSlideSwitching;
+  const isSlideDeleting = store.isSlideDeleting;
   const slideItems = store.slideItems ?? [];
   const currentSlideId = store.currentSlideId ?? '';
   const currentSlide = slideItems.find((item: any) => item.id === currentSlideId) ?? null;
   const persistFailureMessage = store.persistFailureMessage ?? '';
-  const isSettingBusy = isSlidesInitializing || isSlideSwitching;
+  const isSettingBusy = isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPersisting;
   const [isFullWindow, setIsFullWindow] = useState(false);
 
   useEffect(() => {
@@ -81,6 +82,7 @@ const Slides = observer(({ store, getComp }: any) => {
           currentSlideName={currentSlide?.name ?? ''}
           isSettingBusy={isSettingBusy}
           isPersisting={isPersisting}
+          isSlideDeleting={isSlideDeleting}
           currentPageIndex={currentPageIndex}
           totalPage={totalPage}
           isCurrentPageDirty={isCurrentPageDirty}

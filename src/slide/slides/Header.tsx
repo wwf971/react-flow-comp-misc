@@ -8,6 +8,7 @@ const Header = ({
   currentSlideName,
   isSettingBusy,
   isPersisting,
+  isSlideDeleting,
   currentPageIndex,
   totalPage,
   isCurrentPageDirty,
@@ -167,7 +168,7 @@ const Header = ({
         <button
           className="slide-toolbar-btn"
           type="button"
-          disabled={isSettingBusy || !currentSlideId}
+          disabled={isSettingBusy || isPersisting || isSlideDeleting || !currentSlideId}
           onClick={() => {
             onDeleteSlide?.();
           }}

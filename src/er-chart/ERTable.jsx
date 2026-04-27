@@ -19,7 +19,7 @@ import {
 import { useEditableRecEdgeInteractions } from '../edges/edgesRec/interaction.js';
 import { useNodesState, useEdgesState } from './storeExapmle';
 import 'reactflow/dist/style.css';
-import './7-er-table.css';
+import './ERTable.css';
 
 const erTableFlowId = 'erTableFlowId';
 const erTableColumns = {
@@ -253,7 +253,7 @@ const initialEdges = relationshipSpecs.map((relationship) => ({
   data: buildEditableRecEdgeData(relationship.from.side, relationship.to.side),
 }));
 
-export default function ErTableFlow() {
+export function ERTable() {
   const [nodes, , onNodesChange] = useNodesState(erTableFlowId, initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(erTableFlowId, initialEdges);
   const {
@@ -310,3 +310,5 @@ export default function ErTableFlow() {
     </EdgeRecMenuContext.Provider>
   );
 }
+
+export default ERTable;

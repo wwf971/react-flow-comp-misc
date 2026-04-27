@@ -122,6 +122,7 @@ class SlideContentStore {
   isPersisting = false;
   isSlidesInitializing = false;
   isSlideSwitching = false;
+  isSlideDeleting = false;
   persistFailureMessage = '';
   temporarySwitcherByPageId = {};
   temporaryOverflowVisibleContainerIdMap = {};
@@ -500,52 +501,74 @@ class SlideContentStore {
   }
 
   async requestDeleteCurrentSlide() {
+    if (this.isPersisting || this.isSlideSwitching || this.isSlideDeleting) {
+      return { ok: false };
+    }
+    if (!this.persistStore) {
+      return { ok: false };
+    }
     const deletingSlideId = this.currentSlideId;
     if (!deletingSlideId) return { ok: false };
-    const result = await this.persistStore.deleteSlide(deletingSlideId);
-    if (!result?.ok) {
-      runInAction(() => {
-        this.persistFailureMessage = result?.message ?? 'Failed to delete slide';
-      });
-      return { ok: false };
-    }
-    const listResult = await this.persistStore.listSlides();
-    if (!listResult?.ok || !Array.isArray(listResult.slides) || listResult.slides.length === 0) {
-      runInAction(() => {
-        this.slideItems = [];
-        this.currentSlideId = '';
-        this.replaceRuntimeData({
-          metadata: {
-            pageIds: [],
-            currentPageId: '',
-            aspectRatio: { x: 16, y: 9 },
-          },
-          pageDataById: {},
-          containerDataById: {},
-          compDataById: {},
-        });
-      });
-      return { ok: true };
-    }
     runInAction(() => {
-      this.slideItems = listResult.slides;
-    });
-    const nextSlideId = listResult.slides[0].id;
-    runInAction(() => {
-      this.currentSlideId = nextSlideId;
-    });
-    const loadResult = await this.persistStore.getSlideData(nextSlideId);
-    if (!loadResult?.ok || !loadResult.data) {
-      runInAction(() => {
-        this.persistFailureMessage = loadResult?.message ?? 'Failed to load slide';
-      });
-      return { ok: false };
-    }
-    runInAction(() => {
-      this.replaceRuntimeData(loadResult.data);
+      this.isSlideDeleting = true;
       this.persistFailureMessage = '';
     });
-    return { ok: true };
+    try {
+      const result = await this.persistStore.deleteSlide(deletingSlideId);
+      if (!result?.ok) {
+        runInAction(() => {
+          this.persistFailureMessage = result?.message ?? 'Failed to delete slide';
+        });
+        return { ok: false };
+      }
+
+      const listResult = await this.persistStore.listSlides();
+      const listedSlides = Array.isArray(listResult?.slides) ? listResult.slides : [];
+      const nextSlideItems =
+        listResult?.ok && listedSlides.length > 0
+          ? listedSlides
+          : this.slideItems.filter((item) => item.id !== deletingSlideId);
+      if (nextSlideItems.length === 0) {
+        runInAction(() => {
+          this.slideItems = [];
+          this.currentSlideId = '';
+          this.replaceRuntimeData({
+            metadata: {
+              pageIds: [],
+              currentPageId: '',
+              aspectRatio: { x: 16, y: 9 },
+            },
+            pageDataById: {},
+            containerDataById: {},
+            compDataById: {},
+          });
+          this.persistFailureMessage = '';
+        });
+        return { ok: true };
+      }
+
+      const nextSlideId = nextSlideItems[0].id;
+      runInAction(() => {
+        this.slideItems = nextSlideItems;
+        this.currentSlideId = nextSlideId;
+      });
+      const loadResult = await this.persistStore.getSlideData(nextSlideId);
+      if (!loadResult?.ok || !loadResult.data) {
+        runInAction(() => {
+          this.persistFailureMessage = loadResult?.message ?? 'Failed to load slide after delete';
+        });
+        return { ok: false };
+      }
+      runInAction(() => {
+        this.replaceRuntimeData(loadResult.data);
+        this.persistFailureMessage = '';
+      });
+      return { ok: true };
+    } finally {
+      runInAction(() => {
+        this.isSlideDeleting = false;
+      });
+    }
   }
 
   async requestDumpDatabaseSnapshot() {

@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
-import Slides from '../slide/slides/Slides';
-import CompMetadata from '../slide/comp/CompMetadata';
-import CompTextSingleline from '../slide/comp/CompTextSingleline';
-import CompTextMultline from '../slide/comp/CompTextMultline';
-import CompImage from '../slide/comp/CompImage';
-import CompExcalidraw from '../slide/comp/CompExcalidraw';
-import CompCode from '../slide/comp/CompCode';
-import CompIFrame from '../slide/comp/CompIFrame';
-import CompUrl from '../slide/comp/CompUrl';
-import { createDemoSlideStore } from '../slide/contentStore';
+import Slides from './Slides';
+import CompMetadata from '../comp/CompMetadata';
+import CompTextSingleline from '../comp/CompTextSingleline';
+import CompTextMultline from '../comp/CompTextMultline';
+import CompImage from '../comp/CompImage';
+import CompExcalidraw from '../comp/CompExcalidraw';
+import CompCode from '../comp/CompCode';
+import CompIFrame from '../comp/CompIFrame';
+import CompUrl from '../comp/CompUrl';
+import { createDemoSlideStore } from '../contentStore';
 
 const resolveComp = (compName) => {
   if (compName === 'CompTextSingleline') return CompTextSingleline;
@@ -22,11 +22,11 @@ const resolveComp = (compName) => {
   return CompMetadata;
 };
 
-const SlideSystemExample = () => {
+const SlidesExample = () => {
   const store = useMemo(() => createDemoSlideStore(), []);
   const getComp = useMemo(() => resolveComp, []);
 
   return <Slides store={store} getComp={getComp} />;
 };
 
-export default SlideSystemExample;
+export default SlidesExample;

@@ -98,8 +98,15 @@ const cloneData = (data: any) => {
   return JSON.parse(JSON.stringify(data ?? {}));
 };
 
+const resolveDefaultBackendBaseUrl = () => {
+  if (typeof window !== 'undefined' && window?.location?.origin) {
+    return window.location.origin;
+  }
+  return '';
+};
+
 const PERSIST_BACKEND_BASE_URL =
-  (import.meta as any)?.env?.VITE_SLIDE_BACKEND_BASE_URL ?? 'http://127.0.0.1:5174';
+  (import.meta as any)?.env?.VITE_SLIDE_BACKEND_BASE_URL ?? resolveDefaultBackendBaseUrl();
 
 const collectDirtyIds = (dirtyMap: any) => {
   return Object.keys(dirtyMap ?? {}).filter((id) => dirtyMap[id]);
