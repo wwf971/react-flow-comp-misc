@@ -15,11 +15,13 @@ const Slides = observer(({ store, getComp }: any) => {
   const isSlidesInitializing = store.isSlidesInitializing;
   const isSlideSwitching = store.isSlideSwitching;
   const isSlideDeleting = store.isSlideDeleting;
+  const isPageDeleting = store.isPageDeleting;
   const slideItems = store.slideItems ?? [];
   const currentSlideId = store.currentSlideId ?? '';
   const currentSlide = slideItems.find((item: any) => item.id === currentSlideId) ?? null;
   const persistFailureMessage = store.persistFailureMessage ?? '';
-  const isSettingBusy = isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPersisting;
+  const isSettingBusy =
+    isSlidesInitializing || isSlideSwitching || isSlideDeleting || isPageDeleting || isPersisting;
   const [isFullWindow, setIsFullWindow] = useState(false);
 
   useEffect(() => {
@@ -89,6 +91,7 @@ const Slides = observer(({ store, getComp }: any) => {
           persistFailureMessage={persistFailureMessage}
           hasPrevPage={Boolean(prevPage)}
           hasNextPage={Boolean(nextPage)}
+          hasDeletePage={totalPage > 1 && currentPageIndex > 0}
           hasMovePrevPage={currentPageIndex > 1}
           hasMoveNextPage={currentPageIndex > 0 && currentPageIndex < totalPage}
           onSwitchSlide={(slideId) => {
@@ -114,6 +117,9 @@ const Slides = observer(({ store, getComp }: any) => {
           }}
           onCreatePageAfter={() => {
             store.requestCreatePageAfterCurrent();
+          }}
+          onDeletePage={() => {
+            store.requestDeleteCurrentPage();
           }}
           onGoPrevPage={() => {
             if (!prevPage) return;

@@ -359,6 +359,19 @@ class SlideContentPersistStore {
     return { ok: true };
   }
 
+  async deletePage(slideId: string, pageId: string) {
+    const result = await this.requestJson(
+      `${PERSIST_BACKEND_BASE_URL}/api/slide/slides/${slideId}/pages/${pageId}`,
+      {
+        method: 'DELETE',
+      },
+    );
+    if (!result.isOk || !result.payload?.ok) {
+      return { ok: false, message: result.payload?.message ?? 'Failed to delete page' };
+    }
+    return { ok: true };
+  }
+
   async dumpDatabaseSnapshot() {
     const result = await this.requestJson(
       `${PERSIST_BACKEND_BASE_URL}/api/slide/admin/dump-database`,

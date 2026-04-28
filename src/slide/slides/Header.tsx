@@ -15,6 +15,7 @@ const Header = ({
   persistFailureMessage,
   hasPrevPage,
   hasNextPage,
+  hasDeletePage,
   hasMovePrevPage,
   hasMoveNextPage,
   onSwitchSlide,
@@ -25,6 +26,7 @@ const Header = ({
   onDumpDatabase,
   onCreatePageBefore,
   onCreatePageAfter,
+  onDeletePage,
   onGoPrevPage,
   onGoNextPage,
   onMovePrevPage,
@@ -220,6 +222,14 @@ const Header = ({
           onClick={() => onCreatePageAfter?.()}
         >
           Create After
+        </button>
+        <button
+          className="slide-toolbar-btn"
+          type="button"
+          disabled={isSettingBusy || isPersisting || !hasDeletePage}
+          onClick={() => onDeletePage?.()}
+        >
+          Delete Page
         </button>
         <button
           className="slide-toolbar-btn"

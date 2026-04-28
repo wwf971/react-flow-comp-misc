@@ -17,7 +17,7 @@ import {
   createDefaultEditableRecEdgeData,
 } from '../edges/edgesRec/EdgeRec.jsx';
 import { useEditableRecEdgeInteractions } from '../edges/edgesRec/interaction.js';
-import { useNodesState, useEdgesState } from './storeExapmle';
+import { useNodesState, useEdgesState } from '../examples/storeExapmle';
 import 'reactflow/dist/style.css';
 import './ERTable.css';
 

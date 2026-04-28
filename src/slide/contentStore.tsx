@@ -123,6 +123,7 @@ class SlideContentStore {
   isSlidesInitializing = false;
   isSlideSwitching = false;
   isSlideDeleting = false;
+  isPageDeleting = false;
   persistFailureMessage = '';
   temporarySwitcherByPageId = {};
   temporaryOverflowVisibleContainerIdMap = {};
@@ -567,6 +568,57 @@ class SlideContentStore {
     } finally {
       runInAction(() => {
         this.isSlideDeleting = false;
+      });
+    }
+  }
+
+  async requestDeleteCurrentPage() {
+    if (this.isPersisting || this.isSlideSwitching || this.isSlideDeleting || this.isPageDeleting) {
+      return { ok: false };
+    }
+    if (!this.persistStore) {
+      return { ok: false };
+    }
+    const deletingSlideId = this.currentSlideId;
+    const deletingPageId = this.metadata.currentPageId || '';
+    if (!deletingSlideId || !deletingPageId) return { ok: false };
+    if ((this.metadata.pageIds ?? []).length <= 1) {
+      return { ok: false, message: 'cannot delete the last page' };
+    }
+    if (this.hasDirtyPages()) {
+      const saveResult = await this.requestPersistDirtyPages();
+      if (!saveResult?.ok) {
+        return { ok: false };
+      }
+    }
+    runInAction(() => {
+      this.isPageDeleting = true;
+      this.persistFailureMessage = '';
+    });
+    try {
+      const result = await this.persistStore.deletePage(deletingSlideId, deletingPageId);
+      if (!result?.ok) {
+        runInAction(() => {
+          this.persistFailureMessage = result?.message ?? 'Failed to delete page';
+        });
+        return { ok: false };
+      }
+
+      const loadResult = await this.persistStore.getSlideData(deletingSlideId);
+      if (!loadResult?.ok || !loadResult.data) {
+        runInAction(() => {
+          this.persistFailureMessage = loadResult?.message ?? 'Failed to load slide after delete page';
+        });
+        return { ok: false };
+      }
+      runInAction(() => {
+        this.replaceRuntimeData(loadResult.data);
+        this.persistFailureMessage = '';
+      });
+      return { ok: true };
+    } finally {
+      runInAction(() => {
+        this.isPageDeleting = false;
       });
     }
   }
