@@ -1,0 +1,40 @@
+.edge-example-root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  align-items: stretch;
+  padding-right: 2px;
+}
+
+.edge-example-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.edge-example-viewport {
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  border: 1px solid #d5d9df;
+  border-radius: 2px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.edge-example-viewport .flow-wrapper {
+  width: 100%;
+  height: 100%;
+}
+
+.edge-example-block-title {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: sans-serif;
+  color: #202835;
+}
+

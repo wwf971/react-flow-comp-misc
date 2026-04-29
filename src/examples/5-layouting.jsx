@@ -5,7 +5,7 @@ import {
   Background,
   addEdge,
 } from 'reactflow';
-import { useNodesState, useEdgesState } from './storeExapmle';
+import { useNodesState, useEdgesState } from '../storeMobx';
 import 'reactflow/dist/style.css';
 
 const initialNodes = [

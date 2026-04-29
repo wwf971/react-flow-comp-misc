@@ -8,7 +8,7 @@ import {
   Handle,
   Position,
 } from 'reactflow';
-import { useNodesState, useEdgesState } from './storeExapmle';
+import { useNodesState, useEdgesState } from '../storeMobx';
 import 'reactflow/dist/style.css';
 
 function NodeCircle({ data }) {
@@ -44,7 +44,7 @@ function NodeCircle({ data }) {
       <svg className="circle-node-svg" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="48" />
       </svg>
-      <div className="circle-node-label">{data.label}</div>
+      <div className="circle-node-label">{data?.basicData?.label ?? ''}</div>
       {handles}
     </div>
   );
@@ -53,7 +53,7 @@ function NodeCircle({ data }) {
 function TripleHandleNode({ data }) {
   return (
     <div className="custom-node">
-      <div className="custom-node-label">{data.label}</div>
+      <div className="custom-node-label">{data?.basicData?.label ?? ''}</div>
       <Handle
         type="target"
         position={Position.Left}

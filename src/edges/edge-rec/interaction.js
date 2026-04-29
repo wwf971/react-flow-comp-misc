@@ -1,5 +1,6 @@
 import { createElement, useCallback, useMemo, useState } from 'react';
 import { CheckIcon, MenuComp } from '@wwf971/react-comp-misc';
+import { getEdgeSwitcherMenuOptions, invokeEdgeTypeSwitch } from '../edge-switcher/EdgeSwitcherUtils.js';
 
 const directionOptions = [
   { value: 'right', label: 'right' },
@@ -129,7 +130,13 @@ function applySideDirectionForMenuTarget(menuState, directionPreferences, direct
   return directionPreferences;
 }
 
-export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPointCount = 2 }) {
+export function useEditableRecEdgeInteractions({
+  edges,
+  setEdges,
+  getExtraData,
+  setExtraData,
+  maxControlPointCount = 2,
+}) {
   const [menuState, setMenuState] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [isControlPointDragging, setIsControlPointDragging] = useState(false);
@@ -145,6 +152,10 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
 
   const selectSegment = useCallback((edgeId, segmentIndex) => {
     setSelectedTarget({ edgeId, controlPointIndex: null, segmentIndex });
+  }, []);
+
+  const selectEdge = useCallback((edgeId) => {
+    setSelectedTarget({ edgeId, controlPointIndex: null, segmentIndex: 0 });
   }, []);
 
   const selectControlPoint = useCallback((edgeId, controlPointIndex) => {
@@ -166,11 +177,13 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
   const menuItems = useMemo(() => {
     if (!menuState) return [];
     const selectedEdge = edges.find((edge) => edge.id === menuState.edgeId);
-    const selectedControlPoints = selectedEdge?.data?.controlPoints ?? [];
+    const selectedEdgeExtraData = getExtraData?.('edge', menuState.edgeId) ?? selectedEdge?.data ?? {};
+    const selectedControlPoints = selectedEdgeExtraData?.controlPoints ?? [];
     const selectedDirectionPreferences = normalizeDirectionPreferences(
-      selectedEdge?.data?.directionPreferences,
+      selectedEdgeExtraData?.directionPreferences,
       selectedControlPoints.length
     );
+    const isDebugInfoVisible = selectedEdgeExtraData?.isDebugInfoVisible !== false;
     const isCreateEnabled =
       menuState.menuTargetType === 'segment' &&
       !!menuState.controlPointRelative &&
@@ -252,8 +265,31 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
       disabled: !canSetEndSide,
       children: endSideChildren,
     });
+    const switchOptions = getEdgeSwitcherMenuOptions(selectedEdgeExtraData);
+    if (switchOptions.length > 0) {
+      items.push({
+        type: 'menu',
+        name: 'switch edge type',
+        children: switchOptions.map((option) => ({
+          type: 'item',
+          name: option.label,
+          action: 'switch-edge-type',
+          data: { nextEdgeType: option.value },
+        })),
+      });
+    }
+    items.push({
+      type: 'item',
+      name: 'show debug info',
+      action: 'toggle-debug-info',
+      component: MenuOptionLabel,
+      componentProps: {
+        label: 'show debug info',
+        isChecked: isDebugInfoVisible,
+      },
+    });
     return items;
-  }, [edges, maxControlPointCount, menuState]);
+  }, [edges, getExtraData, maxControlPointCount, menuState]);
 
   const handleMenuItemClick = useCallback(
     (item) => {
@@ -262,10 +298,11 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
         setEdges((existingEdges) =>
           existingEdges.map((edge) => {
             if (edge.id !== menuState.edgeId) return edge;
-            const controlPoints = edge.data?.controlPoints ?? [];
+            const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+            const controlPoints = edgeExtraData?.controlPoints ?? [];
             if (controlPoints.length >= maxControlPointCount) return edge;
             const directionPreferences = normalizeDirectionPreferences(
-              edge.data?.directionPreferences,
+              edgeExtraData?.directionPreferences,
               controlPoints.length
             );
             const nextControlPoint = menuState.controlPointRelative;
@@ -291,14 +328,12 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
               ],
               end: { prev: directionPreferences.end.prev },
             };
-            return {
-              ...edge,
-              data: {
-                ...edge.data,
-                controlPoints: nextControlPoints,
-                directionPreferences: nextDirectionPreferences,
-              },
-            };
+            setExtraData?.('edge', edge.id, (existingExtraData) => ({
+              ...existingExtraData,
+              controlPoints: nextControlPoints,
+              directionPreferences: nextDirectionPreferences,
+            }));
+            return edge;
           })
         );
       }
@@ -307,9 +342,10 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
         setEdges((existingEdges) =>
           existingEdges.map((edge) => {
             if (edge.id !== menuState.edgeId) return edge;
-            const controlPoints = edge.data?.controlPoints ?? [];
+            const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+            const controlPoints = edgeExtraData?.controlPoints ?? [];
             const directionPreferences = normalizeDirectionPreferences(
-              edge.data?.directionPreferences,
+              edgeExtraData?.directionPreferences,
               controlPoints.length
             );
             const removeIndex = menuState.controlPointIndex;
@@ -320,14 +356,12 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
               ),
               end: { prev: directionPreferences.end.prev },
             };
-            return {
-              ...edge,
-              data: {
-                ...edge.data,
-                controlPoints: controlPoints.filter((_, index) => index !== removeIndex),
-                directionPreferences: nextDirectionPreferences,
-              },
-            };
+            setExtraData?.('edge', edge.id, (existingExtraData) => ({
+              ...existingExtraData,
+              controlPoints: controlPoints.filter((_, index) => index !== removeIndex),
+              directionPreferences: nextDirectionPreferences,
+            }));
+            return edge;
           })
         );
       }
@@ -336,9 +370,10 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
         setEdges((existingEdges) =>
           existingEdges.map((edge) => {
             if (edge.id !== menuState.edgeId) return edge;
-            const controlPoints = edge.data?.controlPoints ?? [];
+            const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+            const controlPoints = edgeExtraData?.controlPoints ?? [];
             const directionPreferences = normalizeDirectionPreferences(
-              edge.data?.directionPreferences,
+              edgeExtraData?.directionPreferences,
               controlPoints.length
             );
             const nextDirectionPreferences = applySideDirectionForMenuTarget(
@@ -351,18 +386,30 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
               directionPreferences,
               item.data?.direction
             );
-            return {
-              ...edge,
-              data: {
-                ...edge.data,
-                directionPreferences: nextDirectionPreferences,
-              },
-            };
+            setExtraData?.('edge', edge.id, (existingExtraData) => ({
+              ...existingExtraData,
+              directionPreferences: nextDirectionPreferences,
+            }));
+            return edge;
           })
         );
       }
+      if (item.action === 'switch-edge-type') {
+        const selectedEdgeExtraData = getExtraData?.('edge', menuState.edgeId);
+        invokeEdgeTypeSwitch(selectedEdgeExtraData, {
+          edgeId: menuState.edgeId,
+          fromEdgeType: selectedEdgeExtraData?.edgeSwitcher?.ownEdgeType,
+          toEdgeType: item.data?.nextEdgeType,
+        });
+      }
+      if (item.action === 'toggle-debug-info') {
+        setExtraData?.('edge', menuState.edgeId, (existingExtraData) => ({
+          ...existingExtraData,
+          isDebugInfoVisible: existingExtraData?.isDebugInfoVisible === false,
+        }));
+      }
     },
-    [maxControlPointCount, menuState, setEdges]
+    [edges, getExtraData, maxControlPointCount, menuState, setEdges, setExtraData]
   );
 
   const updateControlPoint = useCallback(
@@ -370,21 +417,20 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
       setEdges((existingEdges) =>
         existingEdges.map((edge) => {
           if (edge.id !== edgeId) return edge;
-          const controlPoints = edge.data?.controlPoints ?? [];
+          const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+          const controlPoints = edgeExtraData?.controlPoints ?? [];
           const nextControlPoints = controlPoints.map((point, index) => {
             return index === controlPointIndex ? controlPointRelative : point;
           });
-          return {
-            ...edge,
-            data: {
-              ...edge.data,
-              controlPoints: nextControlPoints,
-            },
-          };
+          setExtraData?.('edge', edge.id, (existingExtraData) => ({
+            ...existingExtraData,
+            controlPoints: nextControlPoints,
+          }));
+          return edge;
         })
       );
     },
-    [setEdges]
+    [getExtraData, setEdges, setExtraData]
   );
 
   const edgeMenuContextValue = useMemo(
@@ -392,6 +438,7 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
       openMenu,
       updateControlPoint,
       selectedTarget,
+      selectEdge,
       selectSegment,
       selectControlPoint,
       startControlPointDrag,
@@ -400,6 +447,7 @@ export function useEditableRecEdgeInteractions({ edges, setEdges, maxControlPoin
     [
       endControlPointDrag,
       openMenu,
+      selectEdge,
       selectControlPoint,
       selectSegment,
       selectedTarget,

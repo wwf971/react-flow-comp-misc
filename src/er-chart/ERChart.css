@@ -1,3 +1,17 @@
+.er-chart-example-root {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+}
+
+.er-chart-example-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2px 4px 0;
+}
+
 .er-table-flow-wrapper {
   background: #fbfbfb;
 }

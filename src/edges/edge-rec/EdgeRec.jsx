@@ -21,7 +21,7 @@ import {
   Position,
   addEdge,
 } from 'reactflow';
-import { useNodesState, useEdgesState } from '../../examples/storeExapmle';
+import { useNodesState, useEdgesState, useExtraData, useGraphDataApi } from '../../storeMobx';
 import {
   buildWorldGraph,
   buildRecEditableSegments as parseBuildRecEditableSegments,
@@ -37,7 +37,7 @@ import {
 } from './interaction';
 import { getDirectionPlanByCaseKey } from './utils';
 import 'reactflow/dist/style.css';
-import '../../examples/6-edge-rec-editable.css';
+import './EdgeRec.css';
 
 const edgeRecEditableFlowId = 'edgeRecEditableFlowId';
 export const EdgeRecMenuContext = createContext(null);
@@ -53,10 +53,12 @@ export function createDefaultEditableRecEdgeData({
   startNext = 'right',
   endPrev = null,
   minimumEndpointLegLength = minimumFlexibleEndpointLegLength,
+  isDebugInfoVisible = true,
 } = {}) {
   return {
     controlPoints: [],
     minimumEndpointLegLength,
+    isDebugInfoVisible,
     directionPreferences: {
       start: { next: startNext },
       controlPoints: [],
@@ -251,20 +253,24 @@ const EditableRecEdge = memo(function EditableRecEdge({
   targetY,
   data,
 }) {
+  const basicData = data?.basicData ?? {};
+  const graphId = basicData.graphId;
+  const edgeExtraData = useExtraData(graphId, 'edge', id) ?? {};
   const edgeMenu = useContext(EdgeRecMenuContext);
   const edgeFrame = useMemo(
     () => getEdgeFrame(sourceX, sourceY, targetX, targetY),
     [sourceX, sourceY, targetX, targetY]
   );
-  const controlPoints = data?.controlPoints ?? [];
+  const controlPoints = edgeExtraData?.controlPoints ?? [];
   const directionPreferences = useMemo(
-    () => normalizeDirectionPreferences(data?.directionPreferences, controlPoints.length),
-    [controlPoints.length, data?.directionPreferences]
+    () => normalizeDirectionPreferences(edgeExtraData?.directionPreferences, controlPoints.length),
+    [controlPoints.length, edgeExtraData?.directionPreferences]
   );
   const minimumEndpointLegLength =
-    typeof data?.minimumEndpointLegLength === 'number'
-      ? data.minimumEndpointLegLength
+    typeof edgeExtraData?.minimumEndpointLegLength === 'number'
+      ? edgeExtraData.minimumEndpointLegLength
       : minimumFlexibleEndpointLegLength;
+  const isDebugInfoVisible = edgeExtraData?.isDebugInfoVisible !== false;
 
   const normalizedControlPoints = useMemo(() => {
     return controlPoints.map((point, index) => {
@@ -441,7 +447,7 @@ const EditableRecEdge = memo(function EditableRecEdge({
               onClick={(event) => handleSegmentClick(event, segment.index)}
               onContextMenu={(event) => handleSegmentContextMenu(event, segment.index)}
             />
-            {isSegmentSelected ? (
+            {isSegmentSelected && isDebugInfoVisible ? (
               <text
                 className="editable-rec-edge-debug-label"
                 x={segment.debugLabelPosition.x}
@@ -536,14 +542,7 @@ const initialEdges = [
     source: '1',
     target: '2',
     type: 'editableRec',
-    data: {
-      controlPoints: [],
-      directionPreferences: {
-        start: { next: 'right' },
-        controlPoints: [],
-        end: { prev: null },
-      },
-    },
+    data: createDefaultEditableRecEdgeData(),
   },
 ];
 
@@ -551,7 +550,7 @@ function BasicNode({ data }) {
   return (
     <div className="rec-edge-demo-node-root">
       <Handle type="target" position={Position.Left} />
-      <div className="rec-edge-demo-node-label">{data.label}</div>
+      <div className="rec-edge-demo-node-label">{data?.basicData?.label ?? ''}</div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -564,6 +563,7 @@ const nodeTypes = {
 export default function EdgeRecEditableFlow() {
   const [nodes, , onNodesChange] = useNodesState(edgeRecEditableFlowId, initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(edgeRecEditableFlowId, initialEdges);
+  const { getExtraData, setExtraData } = useGraphDataApi(edgeRecEditableFlowId);
   const {
     edgeMenuContextValue,
     isControlPointDragging,
@@ -573,6 +573,8 @@ export default function EdgeRecEditableFlow() {
   } = useEditableRecEdgeInteractions({
     edges,
     setEdges,
+    getExtraData,
+    setExtraData,
   });
 
   const onConnect = useCallback(
@@ -582,14 +584,7 @@ export default function EdgeRecEditableFlow() {
           {
             ...params,
             type: 'editableRec',
-            data: {
-              controlPoints: [],
-              directionPreferences: {
-                start: { next: 'right' },
-                controlPoints: [],
-                end: { prev: null },
-              },
-            },
+            data: createDefaultEditableRecEdgeData(),
           },
           existingEdges
         )

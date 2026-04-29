@@ -6,7 +6,7 @@ import {
   addEdge,
   MarkerType,
 } from 'reactflow';
-import { useNodesState, useEdgesState } from './storeExapmle';
+import { useNodesState, useEdgesState } from '../storeMobx';
 import 'reactflow/dist/style.css';
 
 const initialNodes = [
@@ -90,7 +90,7 @@ export default function InteractiveFlow() {
         </button>
         {selectedNode && (
           <span style={{ marginLeft: '8px' }}>
-            Selected: {selectedNode.data.label}
+            Selected: {selectedNode.data?.basicData?.label ?? ''}
           </span>
         )}
       </div>

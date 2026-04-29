@@ -1,28 +1,16 @@
-/*
-SVG hit testing is shape-aware (path stroke/fill), not rectangle-box based like normal HTML.
-This example uses a visible thin edge path plus a transparent wide path to make right-click
-interaction on curves tolerant while keeping edge visuals clean.
-*/
 import { createContext, memo, useCallback, useContext, useMemo, useState } from 'react';
 import { Menu } from '@wwf971/react-comp-misc';
-import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  BaseEdge,
-  Handle,
-  Position,
-  addEdge,
-  getBezierPath,
-} from 'reactflow';
-import { useNodesState, useEdgesState } from './storeExapmle';
-import 'reactflow/dist/style.css';
-import './6-edge-editable.css';
+import { BaseEdge, getBezierPath } from 'reactflow';
+import './EdgeBezier.css';
+import { getEdgeSwitcherMenuOptions, invokeEdgeTypeSwitch } from '../edge-switcher/EdgeSwitcherUtils.js';
+import { useExtraData } from '../../storeMobx';
 
-const edgeEditableFlowId = 'edgeEditableFlowId';
-const EdgeMenuContext = createContext(null);
+export const EdgeBezierMenuContext = createContext(null);
 const controlPointHitTolerance = 10;
+
+export function createDefaultEditableBezierEdgeData() {
+  return { controlPoints: [] };
+}
 
 function getLocalPointFromMouseEvent(event) {
   const target = event.currentTarget;
@@ -43,18 +31,13 @@ function buildPathWithControlPoints(sourceX, sourceY, targetX, targetY, controlP
   }
 
   let path = `M ${sourceX} ${sourceY}`;
-
   for (let index = 0; index < controlPoints.length; index += 1) {
     const currentPoint = controlPoints[index];
     const nextPoint = controlPoints[index + 1];
     const isLastControlPoint = index === controlPoints.length - 1;
     const endPoint = isLastControlPoint
       ? { x: targetX, y: targetY }
-      : {
-          x: (currentPoint.x + nextPoint.x) / 2,
-          y: (currentPoint.y + nextPoint.y) / 2,
-        };
-
+      : { x: (currentPoint.x + nextPoint.x) / 2, y: (currentPoint.y + nextPoint.y) / 2 };
     path += ` Q ${currentPoint.x} ${currentPoint.y} ${endPoint.x} ${endPoint.y}`;
   }
 
@@ -71,18 +54,7 @@ function getEdgeFrame(sourceX, sourceY, targetX, targetY) {
   const tangentY = isLengthTooSmall ? 0 : deltaY / length;
   const normalX = -tangentY;
   const normalY = tangentX;
-
-  return {
-    sourceX,
-    sourceY,
-    targetX,
-    targetY,
-    length,
-    tangentX,
-    tangentY,
-    normalX,
-    normalY,
-  };
+  return { sourceX, sourceY, targetX, targetY, length, tangentX, tangentY, normalX, normalY };
 }
 
 function relativeControlPointToAbsolute(controlPoint, edgeFrame) {
@@ -104,11 +76,7 @@ function absoluteControlPointToRelative(flowPoint, edgeFrame) {
   const clampedAlong = Math.min(Math.max(projectedAlong, 0), edgeFrame.length);
   const t = clampedAlong / edgeFrame.length;
   const offsetT = projectedAlong - clampedAlong;
-  return {
-    t,
-    offsetT,
-    offsetN: projectedNormal,
-  };
+  return { t, offsetT, offsetN: projectedNormal };
 }
 
 function normalizeControlPoint(controlPoint, edgeFrame) {
@@ -116,9 +84,7 @@ function normalizeControlPoint(controlPoint, edgeFrame) {
     typeof controlPoint?.t === 'number' &&
     typeof controlPoint?.offsetT === 'number' &&
     typeof controlPoint?.offsetN === 'number';
-  if (isRelativeControlPoint) {
-    return controlPoint;
-  }
+  if (isRelativeControlPoint) return controlPoint;
 
   const isAbsoluteControlPoint =
     typeof controlPoint?.x === 'number' && typeof controlPoint?.y === 'number';
@@ -126,11 +92,7 @@ function normalizeControlPoint(controlPoint, edgeFrame) {
     return absoluteControlPointToRelative(controlPoint, edgeFrame);
   }
 
-  return {
-    t: 0.5,
-    offsetT: 0,
-    offsetN: 0,
-  };
+  return { t: 0.5, offsetT: 0, offsetN: 0 };
 }
 
 function getNearestControlPointIndex(controlPoints, flowPoint, tolerance) {
@@ -148,8 +110,7 @@ function getNearestControlPointIndex(controlPoints, flowPoint, tolerance) {
     }
   });
 
-  const isWithinTolerance = nearestDistance <= tolerance;
-  return isWithinTolerance ? nearestControlPointIndex : null;
+  return nearestDistance <= tolerance ? nearestControlPointIndex : null;
 }
 
 const EditableBezierEdge = memo(function EditableBezierEdge({
@@ -160,12 +121,15 @@ const EditableBezierEdge = memo(function EditableBezierEdge({
   targetY,
   data,
 }) {
-  const edgeMenu = useContext(EdgeMenuContext);
+  const basicData = data?.basicData ?? {};
+  const graphId = basicData.graphId;
+  const edgeExtraData = useExtraData(graphId, 'edge', id) ?? {};
+  const edgeMenu = useContext(EdgeBezierMenuContext);
   const edgeFrame = useMemo(
     () => getEdgeFrame(sourceX, sourceY, targetX, targetY),
     [sourceX, sourceY, targetX, targetY]
   );
-  const controlPoints = data?.controlPoints ?? [];
+  const controlPoints = edgeExtraData?.controlPoints ?? [];
   const relativeControlPoints = useMemo(
     () => controlPoints.map((point) => normalizeControlPoint(point, edgeFrame)),
     [controlPoints, edgeFrame]
@@ -179,8 +143,7 @@ const EditableBezierEdge = memo(function EditableBezierEdge({
     [sourceX, sourceY, targetX, targetY, absoluteControlPoints]
   );
   const selectedTarget = edgeMenu?.selectedTarget ?? null;
-  const isEdgeSelected =
-    selectedTarget?.edgeId === id && selectedTarget?.controlPointIndex === null;
+  const isEdgeSelected = selectedTarget?.edgeId === id && selectedTarget?.controlPointIndex === null;
 
   const handlePathContextMenu = useCallback(
     (event) => {
@@ -223,20 +186,21 @@ const EditableBezierEdge = memo(function EditableBezierEdge({
     [edgeMenu, id]
   );
 
-  const handleControlPointPointerDown = useCallback((event, controlPointIndex) => {
-    const isLeftButton = event.button === 0;
-    if (!isLeftButton) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    edgeMenu?.startControlPointDrag();
-    edgeMenu?.selectControlPoint(id, controlPointIndex);
-  }, [edgeMenu, id]);
+  const handleControlPointPointerDown = useCallback(
+    (event, controlPointIndex) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      edgeMenu?.startControlPointDrag();
+      edgeMenu?.selectControlPoint(id, controlPointIndex);
+    },
+    [edgeMenu, id]
+  );
 
   const handleControlPointPointerMove = useCallback(
     (event, controlPointIndex) => {
-      const isPrimaryButtonPressed = (event.buttons & 1) === 1;
-      if (!isPrimaryButtonPressed) return;
+      if ((event.buttons & 1) !== 1) return;
       const flowPoint = getLocalPointFromMouseEvent(event);
       if (!flowPoint) return;
       const controlPointRelative = absoluteControlPointToRelative(flowPoint, edgeFrame);
@@ -245,17 +209,19 @@ const EditableBezierEdge = memo(function EditableBezierEdge({
     [edgeFrame, edgeMenu, id]
   );
 
-  const handleControlPointPointerUp = useCallback((event) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    edgeMenu?.endControlPointDrag();
-  }, [edgeMenu]);
+  const handleControlPointPointerUp = useCallback(
+    (event) => {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      edgeMenu?.endControlPointDrag();
+    },
+    [edgeMenu]
+  );
 
   const handleEdgeClick = useCallback(
     (event) => {
-      const isLeftButton = event.button === 0;
-      if (!isLeftButton) return;
+      if (event.button !== 0) return;
       event.preventDefault();
       event.stopPropagation();
       edgeMenu?.selectEdge(id);
@@ -307,99 +273,49 @@ const EditableBezierEdge = memo(function EditableBezierEdge({
   );
 });
 
-const edgeTypes = {
+export const editableBezierEdgeTypes = {
   editableBezier: EditableBezierEdge,
 };
 
-const initialNodes = [
-  { id: '1', type: 'basicEdgeNode', position: { x: 80, y: 120 }, data: { label: 'Node A' } },
-  { id: '2', type: 'basicEdgeNode', position: { x: 360, y: 120 }, data: { label: 'Node B' } },
-];
-
-const initialEdges = [
-  {
-    id: 'edge-1-2',
-    source: '1',
-    target: '2',
-    type: 'editableBezier',
-    data: { controlPoints: [] },
-  },
-];
-
-function BasicNode({ data }) {
-  return (
-    <div className="edge-demo-node-root">
-      <Handle type="target" position={Position.Left} />
-      <div className="edge-demo-node-label">{data.label}</div>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  );
-}
-
-const nodeTypes = {
-  basicEdgeNode: BasicNode,
-};
-
-export default function EdgeEditableFlow() {
-  const [nodes, , onNodesChange] = useNodesState(edgeEditableFlowId, initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(edgeEditableFlowId, initialEdges);
+export function useEditableBezierEdgeInteractions({ edges, setEdges, getExtraData, setExtraData }) {
   const [menuState, setMenuState] = useState(null);
   const [selectedTarget, setSelectedTarget] = useState(null);
   const [isControlPointDragging, setIsControlPointDragging] = useState(false);
   const isMenuOpen = menuState !== null;
 
-  const openMenu = useCallback((nextMenuState) => {
-    setMenuState(nextMenuState);
-  }, []);
-
-  const closeMenu = useCallback(() => {
-    setMenuState(null);
-  }, []);
-
-  const selectEdge = useCallback((edgeId) => {
-    setSelectedTarget({ edgeId, controlPointIndex: null });
-  }, []);
-
-  const selectControlPoint = useCallback((edgeId, controlPointIndex) => {
-    setSelectedTarget({ edgeId, controlPointIndex });
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedTarget(null);
-  }, []);
-
-  const startControlPointDrag = useCallback(() => {
-    setIsControlPointDragging(true);
-  }, []);
-
-  const endControlPointDrag = useCallback(() => {
-    setIsControlPointDragging(false);
-  }, []);
-
-  const onConnect = useCallback(
-    (params) => {
-      setEdges((existingEdges) =>
-        addEdge(
-          {
-            ...params,
-            type: 'editableBezier',
-            data: { controlPoints: [] },
-          },
-          existingEdges
-        )
-      );
-    },
-    [setEdges]
+  const openMenu = useCallback((nextMenuState) => setMenuState(nextMenuState), []);
+  const closeMenu = useCallback(() => setMenuState(null), []);
+  const selectEdge = useCallback((edgeId) => setSelectedTarget({ edgeId, controlPointIndex: null }), []);
+  const selectControlPoint = useCallback(
+    (edgeId, controlPointIndex) => setSelectedTarget({ edgeId, controlPointIndex }),
+    []
   );
+  const clearSelection = useCallback(() => setSelectedTarget(null), []);
+  const startControlPointDrag = useCallback(() => setIsControlPointDragging(true), []);
+  const endControlPointDrag = useCallback(() => setIsControlPointDragging(false), []);
 
   const menuItems = useMemo(() => {
     if (!menuState) return [];
+    const selectedEdgeExtraData = getExtraData?.('edge', menuState.edgeId);
     const items = [{ type: 'item', name: 'create control point', action: 'create-control-point' }];
     if (typeof menuState.controlPointIndex === 'number') {
       items.push({ type: 'item', name: 'remove control point', action: 'remove-control-point' });
     }
+    const switchOptions = getEdgeSwitcherMenuOptions(selectedEdgeExtraData);
+    if (switchOptions.length > 0) {
+      items.push({
+        type: 'menu',
+        name: 'switch edge type',
+        children: switchOptions.map((option) => ({
+          type: 'item',
+          name: option.label,
+          action: 'switch-edge-type',
+          data: { nextEdgeType: option.value },
+        })),
+      });
+    }
     return items;
-  }, [menuState]);
+  }, [getExtraData, menuState]);
 
   const handleMenuItemClick = useCallback(
     (item) => {
@@ -408,7 +324,8 @@ export default function EdgeEditableFlow() {
         setEdges((existingEdges) =>
           existingEdges.map((edge) => {
             if (edge.id !== menuState.edgeId) return edge;
-            const controlPoints = edge.data?.controlPoints ?? [];
+            const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+            const controlPoints = edgeExtraData?.controlPoints ?? [];
             const nextControlPoint = menuState.controlPointRelative;
             const insertIndex = controlPoints.findIndex((point) => {
               const currentT = typeof point?.t === 'number' ? point.t : 0.5;
@@ -422,34 +339,38 @@ export default function EdgeEditableFlow() {
                     nextControlPoint,
                     ...controlPoints.slice(insertIndex),
                   ];
-            return {
-              ...edge,
-              data: {
-                ...edge.data,
-                controlPoints: nextControlPoints,
-              },
-            };
+            setExtraData?.('edge', edge.id, (existingExtraData) => ({
+              ...existingExtraData,
+              controlPoints: nextControlPoints,
+            }));
+            return edge;
           })
         );
       }
-
       if (item.action === 'remove-control-point' && typeof menuState.controlPointIndex === 'number') {
         setEdges((existingEdges) =>
           existingEdges.map((edge) => {
             if (edge.id !== menuState.edgeId) return edge;
-            const controlPoints = edge.data?.controlPoints ?? [];
-            return {
-              ...edge,
-              data: {
-                ...edge.data,
-                controlPoints: controlPoints.filter((_, index) => index !== menuState.controlPointIndex),
-              },
-            };
+            const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+            const controlPoints = edgeExtraData?.controlPoints ?? [];
+            setExtraData?.('edge', edge.id, (existingExtraData) => ({
+              ...existingExtraData,
+              controlPoints: controlPoints.filter((_, index) => index !== menuState.controlPointIndex),
+            }));
+            return edge;
           })
         );
       }
+      if (item.action === 'switch-edge-type') {
+        const selectedEdgeExtraData = getExtraData?.('edge', menuState.edgeId);
+        invokeEdgeTypeSwitch(selectedEdgeExtraData, {
+          edgeId: menuState.edgeId,
+          fromEdgeType: selectedEdgeExtraData?.edgeSwitcher?.ownEdgeType,
+          toEdgeType: item.data?.nextEdgeType,
+        });
+      }
     },
-    [menuState, setEdges]
+    [edges, getExtraData, menuState, setEdges, setExtraData]
   );
 
   const updateControlPoint = useCallback(
@@ -457,22 +378,22 @@ export default function EdgeEditableFlow() {
       setEdges((existingEdges) =>
         existingEdges.map((edge) => {
           if (edge.id !== edgeId) return edge;
-          const controlPoints = edge.data?.controlPoints ?? [];
-          const nextControlPoints = controlPoints.map((point, index) => {
-            return index === controlPointIndex ? controlPointRelative : point;
-          });
-          return {
-            ...edge,
-            data: {
-              ...edge.data,
-              controlPoints: nextControlPoints,
-            },
-          };
+          const edgeExtraData = getExtraData?.('edge', edge.id) ?? {};
+          const controlPoints = edgeExtraData?.controlPoints ?? [];
+          const nextControlPoints = controlPoints.map((point, index) =>
+            index === controlPointIndex ? controlPointRelative : point
+          );
+          setExtraData?.('edge', edge.id, (existingExtraData) => ({
+            ...existingExtraData,
+            controlPoints: nextControlPoints,
+          }));
+          return edge;
         })
       );
     },
-    [setEdges]
+    [getExtraData, setEdges, setExtraData]
   );
+
   const edgeMenuContextValue = useMemo(
     () => ({
       openMenu,
@@ -504,39 +425,24 @@ export default function EdgeEditableFlow() {
     clearSelection();
   }, [clearSelection, closeMenu]);
 
-  return (
-    <EdgeMenuContext.Provider value={edgeMenuContextValue}>
-      <div className="flow-wrapper">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onPaneClick={handlePaneClick}
-          onNodeClick={handleNodeClick}
-          panOnDrag={!isControlPointDragging}
-          fitView
-        >
-          <Controls />
-          <MiniMap />
-          <Background variant="dots" gap={12} size={1} />
-        </ReactFlow>
-      </div>
-      {isMenuOpen && (
-        <Menu
-          items={menuItems}
-          position={menuState.position}
-          onClose={closeMenu}
-          onItemClick={handleMenuItemClick}
-          onContextMenu={(event) => {
-            event.preventDefault();
-            closeMenu();
-          }}
-        />
-      )}
-    </EdgeMenuContext.Provider>
-  );
+  const menuOverlay = isMenuOpen ? (
+    <Menu
+      items={menuItems}
+      position={menuState.position}
+      onClose={closeMenu}
+      onItemClick={handleMenuItemClick}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        closeMenu();
+      }}
+    />
+  ) : null;
+
+  return {
+    edgeMenuContextValue,
+    isControlPointDragging,
+    handlePaneClick,
+    handleNodeClick,
+    menuOverlay,
+  };
 }

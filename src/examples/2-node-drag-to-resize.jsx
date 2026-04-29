@@ -8,7 +8,7 @@ import {
   Position,
   NodeResizer,
 } from 'reactflow';
-import { useNodesState, useEdgesState } from './storeExapmle';
+import { useNodesState, useEdgesState } from '../storeMobx';
 import 'reactflow/dist/style.css';
 import './2-node-drag-to-resize.css';
 
@@ -32,7 +32,7 @@ function ResizableNodeInner({ selected, data }) {
         }}
       />
       <Handle type="target" position={Position.Left} className="resize-node-port" />
-      <div className="resize-node-title">{data.label}</div>
+      <div className="resize-node-title">{data?.basicData?.label ?? ''}</div>
       <div className="resize-node-desc">{data.description}</div>
       <Handle type="source" position={Position.Right} className="resize-node-port" />
     </div>

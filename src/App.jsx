@@ -8,11 +8,10 @@ import NodeDragResizeFlow from './examples/2-node-drag-to-resize.jsx';
 import NodeTextEditableFlow from './examples/3-node-text-editable.jsx';
 import InteractiveFlow from './examples/4-interactive.jsx';
 import LayoutFlow from './examples/5-layouting.jsx';
-import EdgeBezierEditableFlow from './examples/6-edge-bezier-editable.jsx';
-import EdgeRecEditableFlow from './examples/6-edge-rec-editable.jsx';
-import ERTable from './er-chart/ERTable.jsx';
-import SlidesExample from './slide/slides/example.jsx';
-import { GraphStoreProvider } from './examples/storeExapmle';
+import EdgeExample from './edges/example.jsx';
+import ERChartExample from './er-chart/example.jsx';
+import SlidesExample from './slides/slides/example.jsx';
+import { GraphStoreProvider } from './storeMobx';
 
 const exampleItems = [
   {
@@ -52,22 +51,16 @@ const exampleItems = [
     component: LayoutFlow,
   },
   {
-    key: 'editable-edge-bezier',
-    label: 'Editable Edge Bezier',
-    description: 'Bezier edge with editable control points.',
-    component: EdgeBezierEditableFlow,
-  },
-  {
-    key: 'editable-edge-rec',
-    label: 'Editable Edge Right Angle',
-    description: 'Right-angle edge between two editable control points.',
-    component: EdgeRecEditableFlow,
+    key: 'edges',
+    label: 'Edges',
+    description: 'Bezier, right-angle, and per-edge switcher demos.',
+    component: EdgeExample,
   },
   {
     key: 'er-table',
-    label: 'ER Table',
-    description: 'Database tables with row-level custom handles.',
-    component: ERTable,
+    label: 'ER Chart',
+    description: 'Database tables with row-level custom handles and relationships.',
+    component: ERChartExample,
   },
   {
     key: 'slide-system',

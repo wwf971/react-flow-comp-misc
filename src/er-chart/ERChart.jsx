@@ -15,13 +15,24 @@ import {
   EdgeRecMenuContext,
   editableRecEdgeTypes,
   createDefaultEditableRecEdgeData,
-} from '../edges/edgesRec/EdgeRec.jsx';
-import { useEditableRecEdgeInteractions } from '../edges/edgesRec/interaction.js';
-import { useNodesState, useEdgesState } from '../examples/storeExapmle';
+} from '../edges/edge-rec/EdgeRec.jsx';
+import { useEditableRecEdgeInteractions } from '../edges/edge-rec/interaction.js';
+import {
+  EdgeBezierMenuContext,
+  editableBezierEdgeTypes,
+  createDefaultEditableBezierEdgeData,
+  useEditableBezierEdgeInteractions,
+} from '../edges/edge-bezier/EdgeBezier.jsx';
+import {
+  useNodesState,
+  useEdgesState,
+  useExtraData,
+  useGraphDataApi,
+} from '../storeMobx';
 import 'reactflow/dist/style.css';
-import './ERTable.css';
+import './ERChart.css';
 
-const erTableFlowId = 'erTableFlowId';
+const erChartDefaultFlowId = 'erChartFlowId';
 const erTableColumns = {
   key: { data: 'key', align: 'left' },
   name: { data: 'name', align: 'left' },
@@ -37,6 +48,7 @@ const erTableHeaderEstimateHeight = 30;
 const erTableTitleEstimateHeight = 22;
 const erTableRowEstimateHeight = 28;
 const erTableMinimumEndpointLegLength = 100;
+const edgeModeDefault = 'edge-rec';
 
 function getRowHandleId(rowId, side, role) {
   return `row|${rowId}|${side}|${role}`;
@@ -60,6 +72,39 @@ function buildEditableRecEdgeData(fromSide, toSide) {
   });
 }
 
+function buildEditableBezierEdgeData() {
+  return createDefaultEditableBezierEdgeData();
+}
+
+function resolveEdgeMode(edgeMode) {
+  if (edgeMode === 'default') return 'default';
+  if (edgeMode === 'edge-bezier') return 'edge-bezier';
+  if (edgeMode === 'edge-rec') return 'edge-rec';
+  return edgeModeDefault;
+}
+
+function getEdgeTypeByMode(edgeMode) {
+  if (edgeMode === 'default') return 'default';
+  if (edgeMode === 'edge-bezier') return 'editableBezier';
+  return 'editableRec';
+}
+
+function getEdgeTypesByMode(edgeMode) {
+  if (edgeMode === 'edge-bezier') return editableBezierEdgeTypes;
+  if (edgeMode === 'edge-rec') return editableRecEdgeTypes;
+  return undefined;
+}
+
+function getEdgeDataByMode(edgeMode, sourceSide, targetSide) {
+  if (edgeMode === 'edge-bezier') {
+    return buildEditableBezierEdgeData();
+  }
+  if (edgeMode === 'edge-rec') {
+    return buildEditableRecEdgeData(sourceSide, targetSide);
+  }
+  return undefined;
+}
+
 function getDefaultCenterYByIndex(index) {
   return (
     erTableTitleEstimateHeight +
@@ -69,16 +114,19 @@ function getDefaultCenterYByIndex(index) {
   );
 }
 
-const ErTableNode = memo(function ErTableNode({ id, data }) {
+export const ERTable = memo(function ERTable({ id, data }) {
+  const basicData = data?.basicData ?? {};
+  const nodeExtraData = useExtraData(basicData.graphId, 'node', id) ?? {};
   const rootRef = useRef(null);
   const updateNodeInternals = useUpdateNodeInternals();
   const { zoom } = useViewport();
-  const rowIds = useMemo(() => data.rows.map((row) => row.id), [data.rows]);
+  const tableRows = useMemo(() => nodeExtraData.rows ?? [], [nodeExtraData.rows]);
+  const rowIds = useMemo(() => tableRows.map((row) => row.id), [tableRows]);
   const [rowCenterYById, setRowCenterYById] = useState({});
 
   const rows = useMemo(
     () =>
-      data.rows.map((row) => ({
+      tableRows.map((row) => ({
         id: row.id,
         data: {
           key: row.keyMark,
@@ -86,7 +134,7 @@ const ErTableNode = memo(function ErTableNode({ id, data }) {
           type: row.type,
         },
       })),
-    [data.rows]
+    [tableRows]
   );
 
   const measureRowCenters = useCallback(() => {
@@ -142,7 +190,7 @@ const ErTableNode = memo(function ErTableNode({ id, data }) {
 
   return (
     <div ref={rootRef} className="er-table-node-root">
-      <div className="er-table-node-title">{data.tableName}</div>
+      <div className="er-table-node-title">{nodeExtraData.tableName}</div>
       <div className="er-table-node-view-wrap">
         <FolderView
           columns={erTableColumns}
@@ -155,7 +203,7 @@ const ErTableNode = memo(function ErTableNode({ id, data }) {
           listOnly
         />
       </div>
-      {data.rows.map((row, index) => {
+      {tableRows.map((row, index) => {
         const centerY = rowCenterYById[row.id] ?? getDefaultCenterYByIndex(index);
         return (
           <div key={row.id}>
@@ -181,134 +229,142 @@ const ErTableNode = memo(function ErTableNode({ id, data }) {
 });
 
 const nodeTypes = {
-  erTable: ErTableNode,
+  erTable: ERTable,
 };
 
-const erTables = [
-  {
-    id: 'users',
-    tableName: 'users',
-    position: { x: 560, y: 80 },
-    rows: [
-      { id: 'id', keyMark: 'PK', name: 'id', type: 'uuid' },
-      { id: 'email', keyMark: '', name: 'email', type: 'varchar' },
-      { id: 'displayName', keyMark: '', name: 'display_name', type: 'varchar' },
-    ],
-  },
-  {
-    id: 'orders',
-    tableName: 'orders',
-    position: { x: 140, y: 200 },
-    rows: [
-      { id: 'id', keyMark: 'PK', name: 'id', type: 'uuid' },
-      { id: 'userId', keyMark: 'FK', name: 'user_id', type: 'uuid' },
-      { id: 'status', keyMark: '', name: 'status', type: 'varchar' },
-      { id: 'createdAt', keyMark: '', name: 'created_at', type: 'timestamp' },
-    ],
-  },
-  {
-    id: 'orderItems',
-    tableName: 'order_items',
-    position: { x: 560, y: 360 },
-    rows: [
-      { id: 'id', keyMark: 'PK', name: 'id', type: 'uuid' },
-      { id: 'orderId', keyMark: 'FK', name: 'order_id', type: 'uuid' },
-      { id: 'sku', keyMark: '', name: 'sku', type: 'varchar' },
-      { id: 'quantity', keyMark: '', name: 'quantity', type: 'int' },
-    ],
-  },
-];
+function buildInitialNodes(tables) {
+  return tables.map((table) => ({
+    id: table.id,
+    type: 'erTable',
+    position: table.position,
+    className: 'er-table-flow-node',
+    data: {
+      tableName: table.tableName,
+      rows: table.rows,
+    },
+  }));
+}
 
-const relationshipSpecs = [
-  {
-    id: 'rel-orders-user',
-    from: { tableId: 'orders', rowId: 'userId', side: 'left' },
-    to: { tableId: 'users', rowId: 'id', side: 'right' },
-  },
-  {
-    id: 'rel-orderItems-order',
-    from: { tableId: 'orderItems', rowId: 'orderId', side: 'left' },
-    to: { tableId: 'orders', rowId: 'id', side: 'right' },
-  },
-];
+function buildInitialEdges(relationships, edgeMode) {
+  return relationships.map((relationship) => ({
+    id: relationship.id,
+    source: relationship.from.tableId,
+    sourceHandle: getRowHandleId(relationship.from.rowId, relationship.from.side, 'source'),
+    target: relationship.to.tableId,
+    targetHandle: getRowHandleId(relationship.to.rowId, relationship.to.side, 'target'),
+    type: getEdgeTypeByMode(edgeMode),
+    data: getEdgeDataByMode(edgeMode, relationship.from.side, relationship.to.side),
+  }));
+}
 
-const initialNodes = erTables.map((table) => ({
-  id: table.id,
-  type: 'erTable',
-  position: table.position,
-  className: 'er-table-flow-node',
-  data: {
-    tableName: table.tableName,
-    rows: table.rows,
-  },
-}));
-
-const initialEdges = relationshipSpecs.map((relationship) => ({
-  id: relationship.id,
-  source: relationship.from.tableId,
-  sourceHandle: getRowHandleId(relationship.from.rowId, relationship.from.side, 'source'),
-  target: relationship.to.tableId,
-  targetHandle: getRowHandleId(relationship.to.rowId, relationship.to.side, 'target'),
-  type: 'editableRec',
-  data: buildEditableRecEdgeData(relationship.from.side, relationship.to.side),
-}));
-
-export function ERTable() {
-  const [nodes, , onNodesChange] = useNodesState(erTableFlowId, initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(erTableFlowId, initialEdges);
+export function ERChart({ flowId = erChartDefaultFlowId, tables = [], relationships = [], getComp }) {
+  const edgeMode = resolveEdgeMode(getComp?.('edgeMode'));
+  const initialNodes = useMemo(() => buildInitialNodes(tables), [tables]);
+  const initialEdges = useMemo(
+    () => buildInitialEdges(relationships, edgeMode),
+    [relationships, edgeMode]
+  );
+  const [nodes, setNodes, onNodesChange] = useNodesState(flowId, initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(flowId, initialEdges);
+  const { getExtraData, setExtraData } = useGraphDataApi(flowId);
+  const recEdgeInteractions = useEditableRecEdgeInteractions({
+    edges,
+    setEdges,
+    getExtraData,
+    setExtraData,
+  });
+  const bezierEdgeInteractions = useEditableBezierEdgeInteractions({
+    edges,
+    setEdges,
+    getExtraData,
+    setExtraData,
+  });
+  const activeEdgeInteractions =
+    edgeMode === 'edge-rec'
+      ? recEdgeInteractions
+      : edgeMode === 'edge-bezier'
+        ? bezierEdgeInteractions
+        : {
+            edgeMenuContextValue: null,
+            isControlPointDragging: false,
+            handlePaneClick: undefined,
+            handleNodeClick: undefined,
+            menuOverlay: null,
+          };
   const {
     edgeMenuContextValue,
     isControlPointDragging,
     handlePaneClick,
     handleNodeClick,
     menuOverlay,
-  } = useEditableRecEdgeInteractions({
-    edges,
-    setEdges,
-  });
+  } = activeEdgeInteractions;
+
+  useEffect(() => {
+    setNodes(initialNodes);
+  }, [initialNodes, setNodes]);
+
+  useEffect(() => {
+    setEdges(initialEdges);
+  }, [initialEdges, setEdges]);
 
   const onConnect = useCallback(
     (connection) => {
       const sourceSide = parseHandleId(connection.sourceHandle)?.side ?? 'left';
       const targetSide = parseHandleId(connection.targetHandle)?.side ?? 'right';
+      const edgeData = getEdgeDataByMode(edgeMode, sourceSide, targetSide);
       setEdges((existingEdges) =>
         addEdge(
           {
             ...connection,
-            type: 'editableRec',
-            data: buildEditableRecEdgeData(sourceSide, targetSide),
+            type: getEdgeTypeByMode(edgeMode),
+            data: edgeData,
           },
           existingEdges
         )
       );
     },
-    [setEdges]
+    [edgeMode, setEdges]
   );
 
+  const edgeTypes = getEdgeTypesByMode(edgeMode);
+  const flowContent = (
+    <div className="flow-wrapper er-table-flow-wrapper">
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        onPaneClick={handlePaneClick}
+        onNodeClick={handleNodeClick}
+        panOnDrag={!isControlPointDragging}
+        fitView
+      >
+        <Controls />
+        <MiniMap />
+        <Background variant="dots" gap={12} size={1} />
+      </ReactFlow>
+    </div>
+  );
+  const EdgeMenuContextComp =
+    edgeMode === 'edge-rec'
+      ? EdgeRecMenuContext
+      : edgeMode === 'edge-bezier'
+        ? EdgeBezierMenuContext
+        : null;
+
+  if (!EdgeMenuContextComp) {
+    return flowContent;
+  }
+
   return (
-    <EdgeRecMenuContext.Provider value={edgeMenuContextValue}>
-      <div className="flow-wrapper er-table-flow-wrapper">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={editableRecEdgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onPaneClick={handlePaneClick}
-          onNodeClick={handleNodeClick}
-          panOnDrag={!isControlPointDragging}
-          fitView
-        >
-          <Controls />
-          <MiniMap />
-          <Background variant="dots" gap={12} size={1} />
-        </ReactFlow>
-      </div>
+    <EdgeMenuContextComp.Provider value={edgeMenuContextValue}>
+      {flowContent}
       {menuOverlay}
-    </EdgeRecMenuContext.Provider>
+    </EdgeMenuContextComp.Provider>
   );
 }
 
-export default ERTable;
+export default ERChart;

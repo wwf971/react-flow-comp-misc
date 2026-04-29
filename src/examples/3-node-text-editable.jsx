@@ -32,13 +32,14 @@ import {
   useNodesState,
   useEdgesState,
   useOnConnect,
-} from './storeExapmle';
+} from '../storeMobx';
 import 'reactflow/dist/style.css';
 import './3-node-text-editable.css';
 
 const NodeDataChangeRefContext = createContext(null);
 
 function NodeTextEditableInner({ data, id }) {
+  const basicData = data?.basicData ?? {};
   const labelRef = useRef(null);
   const descRef = useRef(null);
   const onChangeRef = useContext(NodeDataChangeRefContext);
@@ -52,8 +53,8 @@ function NodeTextEditableInner({ data, id }) {
 
   const handleLabelBlur = (e) => {
     const newValue = getTextWithNewlines(e.target) || e.target.textContent || '';
-    if (onChangeRef?.current && newValue !== data.label) {
-      onChangeRef.current(id, { ...data, label: newValue });
+    if (onChangeRef?.current && newValue !== basicData.label) {
+      onChangeRef.current(id, { ...basicData, label: newValue });
     }
   };
 
@@ -63,8 +64,8 @@ function NodeTextEditableInner({ data, id }) {
 
   const handleDescBlur = (e) => {
     const newValue = getTextWithNewlines(e.target) || e.target.textContent || '';
-    if (onChangeRef?.current && newValue !== data.description) {
-      onChangeRef.current(id, { ...data, description: newValue });
+    if (onChangeRef?.current && newValue !== basicData.description) {
+      onChangeRef.current(id, { ...basicData, description: newValue });
     }
   };
 
@@ -95,7 +96,7 @@ function NodeTextEditableInner({ data, id }) {
           onBlur={handleLabelBlur}
           onKeyDown={handleLabelKeyDown}
         >
-          {data.label}
+          {basicData.label}
         </div>
       </div>
       <div className="custom-node-body">
@@ -108,7 +109,7 @@ function NodeTextEditableInner({ data, id }) {
           onBlur={handleDescBlur}
           onKeyDown={handleDescKeyDown}
         >
-          {data.description}
+          {basicData.description}
         </div>
       </div>
       <Handle type="source" position={Position.Bottom} />
@@ -117,7 +118,11 @@ function NodeTextEditableInner({ data, id }) {
 }
 
 const NodeTextEditable = memo(NodeTextEditableInner, (prev, next) => {
-  return prev.id === next.id && prev.data?.label === next.data?.label && prev.data?.description === next.data?.description;
+  return (
+    prev.id === next.id &&
+    prev.data?.basicData?.label === next.data?.basicData?.label &&
+    prev.data?.basicData?.description === next.data?.basicData?.description
+  );
 });
 
 const nodeTypes = {
@@ -164,7 +169,9 @@ function NodeTextEditableFlowContent() {
     (nodeId, newData) => {
       setNodes((nds) =>
         nds.map((node) =>
-          node.id === nodeId ? { ...node, data: newData } : node
+          node.id === nodeId
+            ? { ...node, data: { basicData: { ...node.data?.basicData, ...newData } } }
+            : node
         )
       );
     },
