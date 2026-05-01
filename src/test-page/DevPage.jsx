@@ -1,17 +1,16 @@
 import { useMemo, useState } from 'react';
 import { PanelDual } from '@wwf971/react-comp-misc';
-import './App.css';
-import './examples/examples.css';
-import BasicFlow from './examples/0-basic';
-import HandleCustomFlow from './examples/1-handle-custom';
-import NodeDragResizeFlow from './examples/2-node-drag-to-resize.jsx';
-import NodeTextEditableFlow from './examples/3-node-text-editable.jsx';
-import InteractiveFlow from './examples/4-interactive.jsx';
-import LayoutFlow from './examples/5-layouting.jsx';
-import EdgeExample from './edges/example.jsx';
-import ERChartExample from './er-chart/example.jsx';
-import SlidesExample from './slides/slides/example.jsx';
-import { GraphStoreProvider } from './storeMobx';
+import '../App.css';
+import '../examples/examples.css';
+import BasicFlow from '../examples/0-basic';
+import HandleCustomFlow from '../examples/1-handle-custom';
+import NodeDragResizeFlow from '../examples/2-node-drag-to-resize.jsx';
+import NodeTextEditableFlow from '../examples/3-node-text-editable.jsx';
+import InteractiveFlow from '../examples/4-interactive.jsx';
+import LayoutFlow from '../examples/5-layouting.jsx';
+import EdgeExample from '../edges/example.jsx';
+import ERChartExample from '../er-chart/example.jsx';
+import { GraphStoreProvider } from '../storeMobx';
 
 const exampleItems = [
   {
@@ -62,15 +61,9 @@ const exampleItems = [
     description: 'Database tables with row-level custom handles and relationships.',
     component: ERChartExample,
   },
-  {
-    key: 'slide-system',
-    label: 'Slide + MobX',
-    description: 'Slides -> Slide -> Container -> Comp render hierarchy.',
-    component: SlidesExample,
-  },
 ];
 
-function App() {
+const DevPage = () => {
   const [selectedExampleKey, setSelectedExampleKey] = useState('basic');
   const [searchText, setSearchText] = useState('');
   const selectedExample =
@@ -133,6 +126,6 @@ function App() {
       </PanelDual>
     </div>
   );
-}
+};
 
-export default App;
+export default DevPage;

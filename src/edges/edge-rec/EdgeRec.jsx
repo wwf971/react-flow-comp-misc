@@ -48,17 +48,20 @@ const DIR_UP = 'up';
 const DIR_DOWN = 'down';
 const DIR_LEFT = 'left';
 const DIR_RIGHT = 'right';
+const debugInfoVisibilityNever = 'never';
+const debugInfoVisibilityAlways = 'always';
+const debugInfoVisibilitySelected = 'selected';
 
 export function createDefaultEditableRecEdgeData({
   startNext = 'right',
   endPrev = null,
   minimumEndpointLegLength = minimumFlexibleEndpointLegLength,
-  isDebugInfoVisible = true,
+  debugInfoVisibilityMode = debugInfoVisibilitySelected,
 } = {}) {
   return {
     controlPoints: [],
     minimumEndpointLegLength,
-    isDebugInfoVisible,
+    debugInfoVisibilityMode,
     directionPreferences: {
       start: { next: startNext },
       controlPoints: [],
@@ -180,6 +183,73 @@ function resolveSegmentPreferences(segmentIndex, directionPreferences) {
   return { startEmissionDirection, endEmissionDirection };
 }
 
+function resolveDebugInfoVisibilityMode(edgeExtraData) {
+  if (edgeExtraData?.debugInfoVisibilityMode === debugInfoVisibilityNever) {
+    return debugInfoVisibilityNever;
+  }
+  if (edgeExtraData?.debugInfoVisibilityMode === debugInfoVisibilityAlways) {
+    return debugInfoVisibilityAlways;
+  }
+  if (edgeExtraData?.debugInfoVisibilityMode === debugInfoVisibilitySelected) {
+    return debugInfoVisibilitySelected;
+  }
+  return edgeExtraData?.isDebugInfoVisible === false
+    ? debugInfoVisibilityNever
+    : debugInfoVisibilitySelected;
+}
+
+function normalizeVector(vector, fallbackVector = { x: 1, y: 0 }) {
+  const length = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
+  if (length < 0.0001) {
+    const fallbackLength = Math.sqrt(
+      fallbackVector.x * fallbackVector.x + fallbackVector.y * fallbackVector.y
+    );
+    if (fallbackLength < 0.0001) return { x: 1, y: 0 };
+    return { x: fallbackVector.x / fallbackLength, y: fallbackVector.y / fallbackLength };
+  }
+  return { x: vector.x / length, y: vector.y / length };
+}
+
+function getAxisAlignedVectorFromFallback(fallbackVector) {
+  const absX = Math.abs(fallbackVector.x);
+  const absY = Math.abs(fallbackVector.y);
+  if (absX >= absY) {
+    return fallbackVector.x >= 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
+  }
+  return fallbackVector.y >= 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+}
+
+function getDirectionVectorByPreference(direction, fallbackVector) {
+  if (direction === DIR_RIGHT) return { x: 1, y: 0 };
+  if (direction === DIR_LEFT) return { x: -1, y: 0 };
+  if (direction === DIR_UP) return { x: 0, y: -1 };
+  if (direction === DIR_DOWN) return { x: 0, y: 1 };
+  if (direction === 'horizontal') {
+    return fallbackVector.x >= 0 ? { x: 1, y: 0 } : { x: -1, y: 0 };
+  }
+  if (direction === 'vertical') {
+    return fallbackVector.y >= 0 ? { x: 0, y: 1 } : { x: 0, y: -1 };
+  }
+  return getAxisAlignedVectorFromFallback(fallbackVector);
+}
+
+function getTrianglePath(cx, cy, directionVector) {
+  const tipLength = 8;
+  const baseOffset = 5;
+  const halfBase = 4;
+  const tipX = cx + directionVector.x * tipLength;
+  const tipY = cy + directionVector.y * tipLength;
+  const baseCenterX = cx - directionVector.x * baseOffset;
+  const baseCenterY = cy - directionVector.y * baseOffset;
+  const normalX = -directionVector.y;
+  const normalY = directionVector.x;
+  const leftX = baseCenterX + normalX * halfBase;
+  const leftY = baseCenterY + normalY * halfBase;
+  const rightX = baseCenterX - normalX * halfBase;
+  const rightY = baseCenterY - normalY * halfBase;
+  return `M ${tipX} ${tipY} L ${leftX} ${leftY} L ${rightX} ${rightY} Z`;
+}
+
 function chooseBestOrthogonalPath(
   fromPoint,
   toPoint,
@@ -270,7 +340,7 @@ const EditableRecEdge = memo(function EditableRecEdge({
     typeof edgeExtraData?.minimumEndpointLegLength === 'number'
       ? edgeExtraData.minimumEndpointLegLength
       : minimumFlexibleEndpointLegLength;
-  const isDebugInfoVisible = edgeExtraData?.isDebugInfoVisible !== false;
+  const debugInfoVisibilityMode = resolveDebugInfoVisibilityMode(edgeExtraData);
 
   const normalizedControlPoints = useMemo(() => {
     return controlPoints.map((point, index) => {
@@ -313,10 +383,39 @@ const EditableRecEdge = memo(function EditableRecEdge({
   ]);
 
   const selectedTarget = edgeMenu?.selectedTarget ?? null;
+  const isEdgeSelected = selectedTarget?.edgeId === id;
   const isSegmentSelectedOnCurrentEdge =
     selectedTarget?.edgeId === id &&
     selectedTarget?.controlPointIndex === null &&
     typeof selectedTarget?.segmentIndex === 'number';
+  const isDebugInfoShownAlways = debugInfoVisibilityMode === debugInfoVisibilityAlways;
+  const isDebugInfoShownOnlyWhenSelected = debugInfoVisibilityMode === debugInfoVisibilitySelected;
+
+  const startAnchorPoint = absoluteControlPoints[0] ?? { x: targetX, y: targetY };
+  const endAnchorPoint =
+    absoluteControlPoints[absoluteControlPoints.length - 1] ?? { x: sourceX, y: sourceY };
+  const startFallbackVector = {
+    x: startAnchorPoint.x - sourceX,
+    y: startAnchorPoint.y - sourceY,
+  };
+  const endFallbackEmissionVector = {
+    x: endAnchorPoint.x - targetX,
+    y: endAnchorPoint.y - targetY,
+  };
+  const startDirectionVector = normalizeVector(
+    getDirectionVectorByPreference(directionPreferences?.start?.next, startFallbackVector),
+    startFallbackVector
+  );
+  const endEmissionVector = normalizeVector(
+    getDirectionVectorByPreference(directionPreferences?.end?.prev, endFallbackEmissionVector),
+    endFallbackEmissionVector
+  );
+  const endDirectionVector = {
+    x: -endEmissionVector.x,
+    y: -endEmissionVector.y,
+  };
+  const startTrianglePath = getTrianglePath(sourceX, sourceY, startDirectionVector);
+  const endTrianglePath = getTrianglePath(targetX, targetY, endDirectionVector);
   const handleSegmentContextMenu = useCallback(
     (event, segmentIndex) => {
       event.preventDefault();
@@ -447,7 +546,7 @@ const EditableRecEdge = memo(function EditableRecEdge({
               onClick={(event) => handleSegmentClick(event, segment.index)}
               onContextMenu={(event) => handleSegmentContextMenu(event, segment.index)}
             />
-            {isSegmentSelected && isDebugInfoVisible ? (
+            {(isDebugInfoShownAlways || (isDebugInfoShownOnlyWhenSelected && isSegmentSelected)) ? (
               <text
                 className="editable-rec-edge-debug-label"
                 x={segment.debugLabelPosition.x}
@@ -473,7 +572,9 @@ const EditableRecEdge = memo(function EditableRecEdge({
           r={9}
           onContextMenu={(event) => handleEndpointContextMenu(event, 'start')}
         />
-        <circle className="editable-rec-edge-endpoint" cx={sourceX} cy={sourceY} r={3} />
+        {isEdgeSelected ? (
+          <path className="editable-rec-edge-endpoint-triangle" d={startTrianglePath} />
+        ) : null}
         {isSegmentSelectedOnCurrentEdge ? (
           <text className="editable-rec-edge-endpoint-label" x={sourceX + 8} y={sourceY - 8}>
             start
@@ -488,7 +589,9 @@ const EditableRecEdge = memo(function EditableRecEdge({
           r={9}
           onContextMenu={(event) => handleEndpointContextMenu(event, 'end')}
         />
-        <circle className="editable-rec-edge-endpoint" cx={targetX} cy={targetY} r={3} />
+        {isEdgeSelected ? (
+          <path className="editable-rec-edge-endpoint-triangle" d={endTrianglePath} />
+        ) : null}
         {isSegmentSelectedOnCurrentEdge ? (
           <text className="editable-rec-edge-endpoint-label" x={targetX + 8} y={targetY - 8}>
             end

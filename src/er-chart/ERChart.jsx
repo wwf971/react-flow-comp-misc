@@ -49,6 +49,11 @@ const erTableTitleEstimateHeight = 22;
 const erTableRowEstimateHeight = 28;
 const erTableMinimumEndpointLegLength = 100;
 const edgeModeDefault = 'edge-rec';
+const edgeTypesByMode = {
+  'edge-bezier': editableBezierEdgeTypes,
+  'edge-rec': editableRecEdgeTypes,
+  default: undefined,
+};
 
 function getRowHandleId(rowId, side, role) {
   return `row|${rowId}|${side}|${role}`;
@@ -90,9 +95,7 @@ function getEdgeTypeByMode(edgeMode) {
 }
 
 function getEdgeTypesByMode(edgeMode) {
-  if (edgeMode === 'edge-bezier') return editableBezierEdgeTypes;
-  if (edgeMode === 'edge-rec') return editableRecEdgeTypes;
-  return undefined;
+  return edgeTypesByMode[edgeMode] ?? edgeTypesByMode.default;
 }
 
 function getEdgeDataByMode(edgeMode, sourceSide, targetSide) {
@@ -326,7 +329,7 @@ export function ERChart({ flowId = erChartDefaultFlowId, tables = [], relationsh
     [edgeMode, setEdges]
   );
 
-  const edgeTypes = getEdgeTypesByMode(edgeMode);
+  const edgeTypes = useMemo(() => getEdgeTypesByMode(edgeMode), [edgeMode]);
   const flowContent = (
     <div className="flow-wrapper er-table-flow-wrapper">
       <ReactFlow

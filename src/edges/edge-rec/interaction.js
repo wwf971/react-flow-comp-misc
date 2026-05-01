@@ -11,6 +11,11 @@ const directionOptions = [
   { value: 'vertical', label: 'vertical' },
   { value: null, label: 'auto' },
 ];
+const debugInfoVisibilityOptions = [
+  { value: 'never', label: 'never' },
+  { value: 'always', label: 'always' },
+  { value: 'selected', label: 'only when selected' },
+];
 
 function MenuOptionLabel({ label, isChecked }) {
   return createElement(
@@ -183,7 +188,14 @@ export function useEditableRecEdgeInteractions({
       selectedEdgeExtraData?.directionPreferences,
       selectedControlPoints.length
     );
-    const isDebugInfoVisible = selectedEdgeExtraData?.isDebugInfoVisible !== false;
+    const debugInfoVisibilityMode =
+      selectedEdgeExtraData?.debugInfoVisibilityMode === 'never' ||
+      selectedEdgeExtraData?.debugInfoVisibilityMode === 'always' ||
+      selectedEdgeExtraData?.debugInfoVisibilityMode === 'selected'
+        ? selectedEdgeExtraData.debugInfoVisibilityMode
+        : selectedEdgeExtraData?.isDebugInfoVisible === false
+          ? 'never'
+          : 'selected';
     const isCreateEnabled =
       menuState.menuTargetType === 'segment' &&
       !!menuState.controlPointRelative &&
@@ -279,14 +291,19 @@ export function useEditableRecEdgeInteractions({
       });
     }
     items.push({
-      type: 'item',
-      name: 'show debug info',
-      action: 'toggle-debug-info',
-      component: MenuOptionLabel,
-      componentProps: {
-        label: 'show debug info',
-        isChecked: isDebugInfoVisible,
-      },
+      type: 'menu',
+      name: 'debug info visibility',
+      children: debugInfoVisibilityOptions.map((option) => ({
+        type: 'item',
+        name: option.label,
+        action: 'set-debug-info-visibility',
+        data: { debugInfoVisibilityMode: option.value },
+        component: MenuOptionLabel,
+        componentProps: {
+          label: option.label,
+          isChecked: debugInfoVisibilityMode === option.value,
+        },
+      })),
     });
     return items;
   }, [edges, getExtraData, maxControlPointCount, menuState]);
@@ -402,10 +419,17 @@ export function useEditableRecEdgeInteractions({
           toEdgeType: item.data?.nextEdgeType,
         });
       }
-      if (item.action === 'toggle-debug-info') {
+      if (item.action === 'set-debug-info-visibility') {
+        const debugInfoVisibilityMode =
+          item.data?.debugInfoVisibilityMode === 'never' ||
+          item.data?.debugInfoVisibilityMode === 'always' ||
+          item.data?.debugInfoVisibilityMode === 'selected'
+            ? item.data.debugInfoVisibilityMode
+            : 'selected';
         setExtraData?.('edge', menuState.edgeId, (existingExtraData) => ({
           ...existingExtraData,
-          isDebugInfoVisible: existingExtraData?.isDebugInfoVisible === false,
+          debugInfoVisibilityMode,
+          isDebugInfoVisible: debugInfoVisibilityMode !== 'never',
         }));
       }
     },

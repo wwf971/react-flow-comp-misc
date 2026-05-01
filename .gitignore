@@ -26,4 +26,3 @@ dist-ssr
 config.0.js
 
 *.sqlite
-/src/slides/database/*.sql

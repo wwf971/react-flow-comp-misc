@@ -63,6 +63,13 @@
   pointer-events: none;
 }
 
+.editable-rec-edge-endpoint-triangle {
+  fill: rgba(60, 60, 60, 0.65);
+  stroke: rgba(45, 45, 45, 0.9);
+  stroke-width: 1px;
+  pointer-events: none;
+}
+
 .editable-rec-edge-endpoint-hit {
   fill: rgba(0, 0, 0, 0);
   cursor: context-menu;

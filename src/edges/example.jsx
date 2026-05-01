@@ -117,7 +117,14 @@ function extractDataSnapshotByType(edgeType, edgeData) {
           ? edgeData.minimumEndpointLegLength
           : undefined,
       directionPreferences: clonePlainData(edgeData?.directionPreferences ?? {}),
-      isDebugInfoVisible: edgeData?.isDebugInfoVisible !== false,
+      debugInfoVisibilityMode:
+        edgeData?.debugInfoVisibilityMode === 'never' ||
+        edgeData?.debugInfoVisibilityMode === 'always' ||
+        edgeData?.debugInfoVisibilityMode === 'selected'
+          ? edgeData.debugInfoVisibilityMode
+          : edgeData?.isDebugInfoVisible === false
+            ? 'never'
+            : 'selected',
     };
   }
   return {};
